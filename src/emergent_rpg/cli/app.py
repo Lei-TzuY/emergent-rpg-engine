@@ -6,7 +6,6 @@ from typing import Annotated
 import typer
 
 from emergent_rpg.domain.models import NPC, WorldState
-from emergent_rpg.engine.mystery import MysteryGraph
 from emergent_rpg.engine.service import GameEngine
 from emergent_rpg.persistence.db import SQLiteStore
 from emergent_rpg.providers.errors import ProviderError
@@ -58,7 +57,6 @@ def _render_state(state: WorldState) -> str:
     ]
     exits = [state.locations[dest].name for dest in location.exits.values()]
     inventory = [state.items[item_id].name for item_id in player.state.inventory]
-    contradictions = MysteryGraph.contradictions(state, state.player_id)
     return "\n".join(
         [
             f"Location: {location.name}",
@@ -67,10 +65,6 @@ def _render_state(state: WorldState) -> str:
             f"NPCs: {', '.join(npcs) if npcs else 'none'}",
             f"Exits: {', '.join(exits)}",
             f"Inventory: {', '.join(inventory) if inventory else 'empty'}",
-            (
-                f"Mystery: {len(state.player_known_facts)} known facts | "
-                f"{len(contradictions)} contradiction(s)"
-            ),
         ]
     )
 
