@@ -16,6 +16,26 @@ jobs:
           cache: pip
       - run: python -m pip install --upgrade pip
       - run: pip install -e ".[dev]"
+      - run: pip wheel . --no-deps -w /tmp/emergent-wheel
+      - name: Verify wheel web assets
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          wheel = next(Path("/tmp/emergent-wheel").glob("*.whl"))
+          expected = {
+              "emergent_rpg/web/static/index.html",
+              "emergent_rpg/web/static/app.js",
+              "emergent_rpg/web/static/styles.css",
+          }
+          with ZipFile(wheel) as archive:
+              names = set(archive.namelist())
+          missing = expected - names
+          if missing:
+              raise SystemExit(f"wheel missing browser assets: {sorted(missing)}")
+          print(f"verified browser assets in {wheel.name}")
+          PY
       - run: ruff check .
       - run: mypy src/emergent_rpg
       - run: pytest

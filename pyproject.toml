@@ -47,6 +47,7 @@ python_version = "3.12"
 strict = true
 packages = ["emergent_rpg"]
 
+
 [[tool.mypy.overrides]]
 module = "emergent_rpg.engine.resolver"
 disable_error_code = ["no-redef"]
