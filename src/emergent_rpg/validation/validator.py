@@ -10,6 +10,7 @@ from emergent_rpg.domain.events import (
     NPCGoalCompleted,
     NPCMoved,
     PlayerMoved,
+    SimulationCycleProcessed,
     TimeAdvanced,
 )
 from emergent_rpg.domain.models import NPC, WorldState
@@ -131,6 +132,11 @@ def validate_state(state: WorldState, previous: WorldState | None = None) -> Val
             report.add_error("turn_went_backward", "turn number decreased")
         if state.clock.absolute_minutes < previous.clock.absolute_minutes:
             report.add_error("time_went_backward", "world time decreased")
+        if (
+            state.simulation.next_due_absolute_minute
+            < previous.simulation.next_due_absolute_minute
+        ):
+            report.add_error("simulation_went_backward", "simulation cursor decreased")
         for entity_id, old_entity in previous.entities.items():
             if entity_id in state.entities:
                 new_entity = state.entities[entity_id]
@@ -164,6 +170,18 @@ def validate_event_preconditions(state: WorldState, event: Event) -> ValidationR
         _validate_inference_event(state, event, report)
     elif isinstance(event, TimeAdvanced) and event.minutes <= 0:
         report.add_error("time_went_backward", "time advance must be positive")
+    elif isinstance(event, SimulationCycleProcessed):
+        expected = state.simulation.next_due_absolute_minute
+        if event.scheduled_absolute_minute != expected:
+            report.add_error(
+                "invalid_simulation_cycle",
+                f"simulation cycle expected minute {expected}",
+            )
+        if event.scheduled_absolute_minute > state.clock.absolute_minutes:
+            report.add_error(
+                "invalid_simulation_cycle",
+                "simulation cycle cannot be processed before world time reaches it",
+            )
     return report
 
 

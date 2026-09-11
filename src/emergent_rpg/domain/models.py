@@ -156,6 +156,13 @@ class FactInferenceRule(BaseModel):
     conclusion: FactId
 
 
+class SimulationState(BaseModel):
+    cadence_minutes: int = Field(default=5, ge=1, le=24 * 60)
+    next_due_absolute_minute: int = Field(default=8 * 60 + 5, ge=0)
+    max_catch_up_cycles: int = Field(default=12, ge=1, le=100)
+    max_npc_actions_per_cycle: int = Field(default=3, ge=1, le=20)
+
+
 class WorldState(BaseModel):
     turn_number: int = Field(default=0, ge=0)
     clock: WorldClock = Field(default_factory=WorldClock)
@@ -165,6 +172,7 @@ class WorldState(BaseModel):
     items: dict[ItemId, Item]
     facts: dict[FactId, Fact]
     inference_rules: dict[str, FactInferenceRule] = Field(default_factory=dict)
+    simulation: SimulationState = Field(default_factory=SimulationState)
     player_known_facts: set[FactId] = Field(default_factory=set)
     factions: set[str] = Field(default_factory=set)
 

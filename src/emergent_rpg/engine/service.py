@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from emergent_rpg.domain.actions import PlayerAction
+from emergent_rpg.domain.events import Event, SimulationCycleProcessed
 from emergent_rpg.domain.models import GameSession, Turn, WorldState
 from emergent_rpg.engine.mystery import MysteryGraph
 from emergent_rpg.engine.narrative import DeterministicNarrativePlanner
@@ -16,6 +17,7 @@ from emergent_rpg.engine.npc import (
 )
 from emergent_rpg.engine.reducer import apply_event, replay
 from emergent_rpg.engine.resolver import ActionResult, DeterministicResolver
+from emergent_rpg.engine.simulation import DeterministicSimulationScheduler
 from emergent_rpg.memory.models import Episode
 from emergent_rpg.persistence.db import SQLiteStore
 from emergent_rpg.providers.base import ActionParser, NarrativeGenerator
@@ -42,6 +44,7 @@ class GameEngine:
         self.mystery = MysteryGraph()
         self.npc_planner = DeterministicNPCPlanner()
         self.npc_resolver = DeterministicNPCResolver()
+        self.simulation_scheduler = DeterministicSimulationScheduler()
         self.generator = generator or ScriptedNarrativeGenerator()
 
     def new_session(self, name: str = "Ashfall Relay") -> GameSession:
@@ -83,12 +86,9 @@ class GameEngine:
             return result, narration, before
 
         candidate = before.model_copy(deep=True)
-        emitted_events = list(result.emitted_events)
+        player_events = list(result.emitted_events)
         for event in result.emitted_events:
-            precheck = validate_event_preconditions(candidate, event)
-            if not precheck.valid:
-                raise TransitionRejected(str(precheck.issues))
-            candidate = apply_event(candidate, event)
+            candidate = self._apply_validated_event(candidate, event)
 
         inferred_events = self.mystery.infer_events(
             candidate,
@@ -98,15 +98,12 @@ class GameEngine:
         if inferred_events:
             observations = list(result.observations)
             for event in inferred_events:
-                precheck = validate_event_preconditions(candidate, event)
-                if not precheck.valid:
-                    raise TransitionRejected(str(precheck.issues))
-                candidate = apply_event(candidate, event)
-                emitted_events.append(event)
+                candidate = self._apply_validated_event(candidate, event)
+                player_events.append(event)
                 observations.append(f"Inference: {candidate.facts[event.fact_id].proposition}")
             result = result.model_copy(
                 update={
-                    "emitted_events": emitted_events,
+                    "emitted_events": player_events,
                     "observations": observations,
                     "tags": result.tags | {"inference"},
                 }
@@ -121,9 +118,18 @@ class GameEngine:
         if not scene_report.valid:
             raise TransitionRejected(str(scene_report.issues))
 
-        # Narrative generation happens before the transactional commit. A provider outage can
-        # therefore fail the turn without leaving canonical state or the event log half-applied.
+        # Narrative generation happens before simulation and before the transactional commit.
+        # A provider outage therefore cannot leave either the player's action or off-screen
+        # consequences half-applied.
         narration = self.generator.generate(plan)
+
+        candidate, simulation_events = self._run_due_simulation(
+            candidate,
+            turn_number=candidate.turn_number,
+        )
+        final_report = validate_state(candidate, previous=before)
+        if not final_report.valid:
+            raise TransitionRejected(str(final_report.issues))
 
         location_id = candidate.player().state.current_location
         turn = Turn(
@@ -146,30 +152,40 @@ class GameEngine:
             summary=narration,
             importance=importance,
         )
-        self.store.commit_turn(session_id, candidate, result.emitted_events, turn, episode)
+        all_events = [*result.emitted_events, *simulation_events]
+        self.store.commit_turn(session_id, candidate, all_events, turn, episode)
         return result, narration, candidate
 
-    def run_npc_phase(
+    def _apply_validated_event(self, state: WorldState, event: Event) -> WorldState:
+        precheck = validate_event_preconditions(state, event)
+        if not precheck.valid:
+            raise TransitionRejected(str(precheck.issues))
+        return apply_event(state, event)
+
+    def _execute_npc_phase_on_state(
         self,
-        session_id: str,
-        max_actions: int = 3,
+        state: WorldState,
+        *,
+        turn_number: int,
+        max_actions: int,
+        offscreen_only: bool,
     ) -> tuple[NPCPhaseResult, WorldState]:
         if not 1 <= max_actions <= 20:
             raise ValueError("max_actions must be between 1 and 20")
 
-        before = self.store.load_state(session_id)
-        candidate = before.model_copy(deep=True)
-        turn_number = before.turn_number + 1
+        candidate = state.model_copy(deep=True)
         decisions: list[NPCDecision] = []
-        emitted_events = []
+        emitted_events: list[Event] = []
         involved_npc_ids: set[str] = set()
         actions_attempted = 0
         actions_executed = 0
+        player_location = candidate.player().state.current_location
 
         npc_ids = sorted(
             entity_id
             for entity_id, entity in candidate.entities.items()
             if entity.kind == "npc"
+            and (not offscreen_only or entity.state.current_location != player_location)
         )
         for npc_id in npc_ids:
             if actions_attempted >= max_actions:
@@ -198,10 +214,7 @@ class GameEngine:
                     continue
 
                 for event in action_result.emitted_events:
-                    precheck = validate_event_preconditions(candidate, event)
-                    if not precheck.valid:
-                        raise TransitionRejected(str(precheck.issues))
-                    candidate = apply_event(candidate, event)
+                    candidate = self._apply_validated_event(candidate, event)
                     emitted_events.append(event)
 
                 inferred_events = self.mystery.infer_events(
@@ -210,30 +223,71 @@ class GameEngine:
                     turn_number,
                 )
                 for event in inferred_events:
-                    precheck = validate_event_preconditions(candidate, event)
-                    if not precheck.valid:
-                        raise TransitionRejected(str(precheck.issues))
-                    candidate = apply_event(candidate, event)
+                    candidate = self._apply_validated_event(candidate, event)
                     emitted_events.append(event)
 
                 actions_executed += 1
                 involved_npc_ids.add(npc_id)
 
-        phase = NPCPhaseResult(
-            actions_attempted=actions_attempted,
-            actions_executed=actions_executed,
-            decisions=decisions,
-            emitted_events=emitted_events,
-            involved_npc_ids=involved_npc_ids,
+        return (
+            NPCPhaseResult(
+                actions_attempted=actions_attempted,
+                actions_executed=actions_executed,
+                decisions=decisions,
+                emitted_events=emitted_events,
+                involved_npc_ids=involved_npc_ids,
+            ),
+            candidate,
         )
-        if not emitted_events:
+
+    def _run_due_simulation(
+        self,
+        state: WorldState,
+        *,
+        turn_number: int,
+    ) -> tuple[WorldState, list[Event]]:
+        schedule = self.simulation_scheduler.due_cycles(state)
+        if not schedule.due_absolute_minutes:
+            return state, []
+
+        candidate = state.model_copy(deep=True)
+        emitted_events: list[Event] = []
+        for scheduled_minute in schedule.due_absolute_minutes:
+            phase, candidate = self._execute_npc_phase_on_state(
+                candidate,
+                turn_number=turn_number,
+                max_actions=candidate.simulation.max_npc_actions_per_cycle,
+                offscreen_only=True,
+            )
+            emitted_events.extend(phase.emitted_events)
+            marker = SimulationCycleProcessed(
+                turn_number=turn_number,
+                scheduled_absolute_minute=scheduled_minute,
+            )
+            candidate = self._apply_validated_event(candidate, marker)
+            emitted_events.append(marker)
+        return candidate, emitted_events
+
+    def run_npc_phase(
+        self,
+        session_id: str,
+        max_actions: int = 3,
+    ) -> tuple[NPCPhaseResult, WorldState]:
+        before = self.store.load_state(session_id)
+        phase, candidate = self._execute_npc_phase_on_state(
+            before,
+            turn_number=before.turn_number + 1,
+            max_actions=max_actions,
+            offscreen_only=False,
+        )
+        if not phase.emitted_events:
             return phase, before
 
         state_report = validate_state(candidate, previous=before)
         if not state_report.valid:
             raise TransitionRejected(str(state_report.issues))
 
-        narration = f"Autonomous NPC phase executed {actions_executed} action(s)."
+        narration = f"Autonomous NPC phase executed {phase.actions_executed} action(s)."
         turn = Turn(
             session_id=session_id,
             turn_number=candidate.turn_number,
@@ -241,10 +295,16 @@ class GameEngine:
             accepted=True,
             narration=narration,
             location_id=candidate.player().state.current_location,
-            involved_entities=involved_npc_ids,
+            involved_entities=phase.involved_npc_ids,
             tags={"npc", "autonomous"},
         )
-        self.store.commit_turn(session_id, candidate, emitted_events, turn, None)
+        self.store.commit_turn(
+            session_id,
+            candidate,
+            phase.emitted_events,
+            turn,
+            None,
+        )
         return phase, candidate
 
     def replay_session(self, session_id: str) -> WorldState:
