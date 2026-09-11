@@ -96,7 +96,10 @@ function renderConditions(conditions) {
   }
   conditions.forEach((condition) => {
     const item = document.createElement("li");
-    item.textContent = `${condition.name}: ${condition.description}`;
+    const traversal = condition.traversal_extra_minutes > 0
+      ? ` Travel +${condition.traversal_extra_minutes} min.`
+      : "";
+    item.textContent = `${condition.name}: ${condition.description}${traversal}`;
     ui.conditions.append(item);
   });
 }
