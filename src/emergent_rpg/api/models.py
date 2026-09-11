@@ -1,0 +1,115 @@
+from __future__ import annotations
+
+from pydantic import BaseModel, Field
+
+from emergent_rpg.domain.models import GameSession, WorldState
+
+
+class SessionCreateRequest(BaseModel):
+    name: str = Field(default="Ashfall Relay", min_length=1, max_length=200)
+
+
+class ActionRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=4_000)
+
+
+class VisibleItem(BaseModel):
+    id: str
+    name: str
+
+
+class VisibleNPC(BaseModel):
+    id: str
+    name: str
+
+
+class KnownFact(BaseModel):
+    id: str
+    proposition: str
+
+
+class PlayerStateView(BaseModel):
+    turn_number: int
+    time: str
+    location_id: str
+    location_name: str
+    exits: dict[str, str]
+    visible_items: list[VisibleItem] = Field(default_factory=list)
+    visible_npcs: list[VisibleNPC] = Field(default_factory=list)
+    inventory: list[VisibleItem] = Field(default_factory=list)
+    known_facts: list[KnownFact] = Field(default_factory=list)
+
+
+class SessionView(BaseModel):
+    session: GameSession
+    state: PlayerStateView
+
+
+class ActionView(BaseModel):
+    accepted: bool
+    reason: str | None = None
+    narration: str
+    state: PlayerStateView
+
+
+class HistoryTurnView(BaseModel):
+    turn_number: int
+    raw_input: str
+    accepted: bool
+    reason: str | None = None
+    narration: str
+    location_id: str
+
+
+class HistoryView(BaseModel):
+    turns: list[HistoryTurnView] = Field(default_factory=list)
+
+
+def project_player_state(state: WorldState) -> PlayerStateView:
+    player = state.player()
+    location = state.locations[player.state.current_location]
+    visible_items = sorted(
+        (
+            VisibleItem(id=item.id, name=item.name)
+            for item in state.items.values()
+            if item.location_id == location.id
+        ),
+        key=lambda item: item.name,
+    )
+    visible_npcs = sorted(
+        (
+            VisibleNPC(id=entity.id, name=entity.name)
+            for entity in state.entities.values()
+            if entity.kind == "npc"
+            and entity.state.current_location == location.id
+            and entity.state.alive
+            and entity.state.conscious
+        ),
+        key=lambda npc: npc.name,
+    )
+    inventory = sorted(
+        (
+            VisibleItem(id=item_id, name=state.items[item_id].name)
+            for item_id in player.state.inventory
+        ),
+        key=lambda item: item.name,
+    )
+    known_facts = [
+        KnownFact(id=fact_id, proposition=state.facts[fact_id].proposition)
+        for fact_id in sorted(state.player_known_facts)
+    ]
+    exits = {
+        alias: state.locations[destination].name
+        for alias, destination in sorted(location.exits.items())
+    }
+    return PlayerStateView(
+        turn_number=state.turn_number,
+        time=state.clock.display(),
+        location_id=location.id,
+        location_name=location.name,
+        exits=exits,
+        visible_items=visible_items,
+        visible_npcs=visible_npcs,
+        inventory=inventory,
+        known_facts=known_facts,
+    )
