@@ -291,25 +291,25 @@ class GameEngine:
         emitted_events: list[Event] = []
         for scheduled_minute, _, kind, scheduled_event_id in timeline:
             if kind == "activate":
-                event = ScheduledLocationConditionApplied(
+                activation_event = ScheduledLocationConditionApplied(
                     turn_number=turn_number,
                     scheduled_event_id=scheduled_event_id,
                     scheduled_absolute_minute=scheduled_minute,
                 )
-                candidate = self._apply_validated_event(candidate, event)
-                emitted_events.append(event)
+                candidate = self._apply_validated_event(candidate, activation_event)
+                emitted_events.append(activation_event)
                 continue
             if kind == "expire":
                 location_id, condition_code = expiry_targets[scheduled_event_id]
-                event = ScheduledLocationConditionExpired(
+                expiry_event = ScheduledLocationConditionExpired(
                     turn_number=turn_number,
                     scheduled_event_id=scheduled_event_id,
                     scheduled_absolute_minute=scheduled_minute,
                     location_id=location_id,
                     condition_code=condition_code,
                 )
-                candidate = self._apply_validated_event(candidate, event)
-                emitted_events.append(event)
+                candidate = self._apply_validated_event(candidate, expiry_event)
+                emitted_events.append(expiry_event)
                 continue
 
             phase, candidate = self._execute_npc_phase_on_state(
