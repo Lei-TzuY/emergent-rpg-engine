@@ -15,7 +15,8 @@ The project advances by coherent executable slices rather than placeholder subsy
 11. **Model routing / cost controls** — per-stage provider/model configuration, finite request/reserved-token budgets, bounded completion caching, and failure atomicity. **Complete.**
 12. **Evaluation harness for 1,000+ turn consistency** — deterministic seeded/adversarial workload, periodic replay/invariant checkpoints, machine-readable reports, and a real 1,000-accepted-turn CI gate. **Complete.**
 13. **Scheduled world events / environmental simulation** — canonical future-event queue, deterministic due-time execution, replayable schedule consumption, bounded catch-up, API/UI-visible active location conditions, and atomic integration with NPC simulation. **Complete.**
-14. **Environmental rules / traversal hazards** — declarative active-condition effects that alter deterministic action legality/cost/consequences through the ordinary resolver/event pipeline. **Next.**
+14. **Environmental rules / traversal hazards** — declarative active-condition traversal effects, deterministic additive movement cost, ordinary event emission, player-visible explanation, and long-run replay evidence. **Complete.**
+15. **Environmental condition lifecycle / expiry** — canonical scheduled expiration, typed removal events, replayable lifecycle transitions, bounded due-time processing, and restoration of baseline rules after expiry. **Next.**
 
 ## Milestone 3 invariant
 
@@ -197,6 +198,27 @@ Pending schedule ids/times never enter `PlayerStateView`; only conditions alread
 
 The first complete M13 implementation head passed 83 pytest tests and the existing seeded 1,000-accepted-turn gate. That run preserved the same 1,058 submissions / 1,000 accepted / 58 rejected / 1,000 episode behavior while the event log increased from 2,268 to 2,269 events, exactly accounting for the newly scheduled environmental event. All tracked continuity invariants remained true with `failures=[]`.
 
-## Promotion gate for Milestone 14
+## Milestone 14 invariant
 
-Environmental rules must turn active conditions into deterministic gameplay mechanics rather than prose-only metadata. Effects must be declarative/canonical, interpreted by the existing resolver or another deterministic rule layer, and emitted as ordinary validated events. The first vertical slice should prove at least one active condition changes an executable action's legality, time cost, stamina/health consequence, or route availability without giving the LLM mutation authority. Tests must cover rule activation/deactivation boundaries, resolver behavior, replay equality, provider-failure atomicity, API-visible explanation of blocked/modified actions where appropriate, and the 1,000-turn continuity gate. Avoid hard-coding one demo condition directly into resolver control flow; rules should be data-driven enough to support additional hazards without new action-specific branches for each named condition.
+Environmental mechanics are declarative canonical policy rather than condition-name branches:
+
+```text
+Location.active_conditions
+→ optional TraversalEffect payloads
+→ EnvironmentalRules.traversal_cost()
+→ deterministic resolver
+→ PlayerMoved + TimeAdvanced
+→ ordinary validation / persistence / replay
+```
+
+The resolver does not compare against `ash_squall` or any named condition. Baseline movement costs five canonical minutes; active traversal modifiers contribute deterministic additive extra minutes. A synthetic non-Ashfall condition regression proves the rule layer is data-driven, and multiple modifiers compose without adding new resolver branches.
+
+The scheduled Ashfall Yard squall carries `extra_minutes=5`, so movement from the yard costs five minutes before activation and ten minutes after activation. The API exposes the active condition's `traversal_extra_minutes`, and the browser displays the mechanical effect. Narration describes an already-determined outcome and retains no mutation authority; provider failure before commit leaves hazardous movement and its time advance unapplied.
+
+The first fully green M14 candidate passed 90 pytest tests plus the seeded 1,000-accepted-turn evaluation. That run produced 1,058 submissions, 1,000 accepted turns, 58 rejections, 2,414 events, 1,000 episodes, and final canonical clock minute 5,086. Replay equality, state validity, monotonic clock/knowledge/event log, item ownership, and event-id uniqueness all remained true with `failures=[]`. These numbers are correctness evidence, not a throughput benchmark.
+
+## Promotion gate for Milestone 15
+
+Environmental conditions must gain a canonical lifecycle rather than remaining permanently monotonic. Expiry/removal must be represented by authoritative scheduled data and a typed validated event; arbitrary dictionary deletion is not acceptable. Due-time processing must use canonical world time, deterministic ordering, bounded catch-up, and the same atomic player-turn transaction as existing simulation.
+
+The first vertical slice should let the demo ash squall expire at a configured world minute and restore baseline traversal cost after replayable removal. Tests must cover pre-expiry behavior, exact expiry boundary, restart/replay equality, duplicate/out-of-order/early expiration rejection, bounded backlog interaction with scheduled activation/NPC cycles, provider-failure atomicity, player-visible API/UI updates, and the 1,000-turn continuity gate. The transition must replace the current blanket "active environmental conditions never disappear" validator rule with provenance-aware lifecycle validation rather than simply deleting that invariant.
