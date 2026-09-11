@@ -223,45 +223,47 @@ def _pending_world_events(
     state: WorldState,
 ) -> list[tuple[int, int, str, Literal["activate", "expire"]]]:
     pending: list[tuple[int, int, str, Literal["activate", "expire"]]] = []
-    for event in state.scheduled_location_conditions:
-        pending.append((event.due_absolute_minute, 0, event.id, "activate"))
-        expiry_minute = event.expiry_absolute_minute
+    for activation in state.scheduled_location_conditions:
+        pending.append((activation.due_absolute_minute, 0, activation.id, "activate"))
+        expiry_minute = activation.expiry_absolute_minute
         if expiry_minute is not None:
-            pending.append((expiry_minute, 1, event.expiry_event_id, "expire"))
+            pending.append((expiry_minute, 1, activation.expiry_event_id, "expire"))
     pending.extend(
-        (event.due_absolute_minute, 1, event.id, "expire")
-        for event in state.scheduled_location_condition_expirations
+        (expiry.due_absolute_minute, 1, expiry.id, "expire")
+        for expiry in state.scheduled_location_condition_expirations
     )
     pending.sort()
     return pending
 
 
 def _validate_scheduled_world_state(state: WorldState, report: ValidationReport) -> None:
-    activation_ids = [event.id for event in state.scheduled_location_conditions]
+    activation_ids = [activation.id for activation in state.scheduled_location_conditions]
     derived_expiry_ids = [
-        event.expiry_event_id
-        for event in state.scheduled_location_conditions
-        if event.expiry_absolute_minute is not None
+        activation.expiry_event_id
+        for activation in state.scheduled_location_conditions
+        if activation.expiry_absolute_minute is not None
     ]
-    expiry_ids = [event.id for event in state.scheduled_location_condition_expirations]
+    expiry_ids = [
+        expiry.id for expiry in state.scheduled_location_condition_expirations
+    ]
     all_ids = [*activation_ids, *derived_expiry_ids, *expiry_ids]
     if len(all_ids) != len(set(all_ids)):
         report.add_error("invalid_scheduled_world_event", "scheduled event ids must be unique")
 
     activation_targets: list[tuple[str, str]] = []
-    for event in state.scheduled_location_conditions:
-        if event.location_id not in state.locations:
+    for activation in state.scheduled_location_conditions:
+        if activation.location_id not in state.locations:
             report.add_error(
                 "invalid_scheduled_world_event",
-                f"{event.id} references missing location {event.location_id}",
+                f"{activation.id} references missing location {activation.location_id}",
             )
             continue
-        target = (event.location_id, event.condition.code)
+        target = (activation.location_id, activation.condition.code)
         activation_targets.append(target)
-        if event.condition.code in state.locations[event.location_id].active_conditions:
+        if activation.condition.code in state.locations[activation.location_id].active_conditions:
             report.add_error(
                 "invalid_scheduled_world_event",
-                f"{event.id} targets an already-active location condition",
+                f"{activation.id} targets an already-active location condition",
             )
 
     duplicate_targets = [
@@ -274,19 +276,19 @@ def _validate_scheduled_world_state(state: WorldState, report: ValidationReport)
         )
 
     expiry_targets: list[tuple[str, str]] = []
-    for event in state.scheduled_location_condition_expirations:
-        if event.location_id not in state.locations:
+    for expiry in state.scheduled_location_condition_expirations:
+        if expiry.location_id not in state.locations:
             report.add_error(
                 "invalid_scheduled_world_event",
-                f"{event.id} references missing location {event.location_id}",
+                f"{expiry.id} references missing location {expiry.location_id}",
             )
             continue
-        target = (event.location_id, event.condition_code)
+        target = (expiry.location_id, expiry.condition_code)
         expiry_targets.append(target)
-        if event.condition_code not in state.locations[event.location_id].active_conditions:
+        if expiry.condition_code not in state.locations[expiry.location_id].active_conditions:
             report.add_error(
                 "invalid_scheduled_world_event",
-                f"{event.id} expiry target is not active",
+                f"{expiry.id} expiry target is not active",
             )
 
     duplicate_expiry_targets = [
@@ -385,7 +387,7 @@ def _validate_scheduled_location_condition_expiry(
         report,
     ):
         return
-    scheduled = next(
+    scheduled_expiry = next(
         (
             item
             for item in state.scheduled_location_condition_expirations
@@ -393,26 +395,26 @@ def _validate_scheduled_location_condition_expiry(
         ),
         None,
     )
-    if scheduled is None:
+    if scheduled_expiry is None:
         report.add_error(
             "invalid_scheduled_world_event",
             f"expiry {event.scheduled_event_id} has not been materialized",
         )
         return
     if (event.location_id, event.condition_code) != (
-        scheduled.location_id,
-        scheduled.condition_code,
+        scheduled_expiry.location_id,
+        scheduled_expiry.condition_code,
     ):
         report.add_error(
             "invalid_scheduled_world_event",
             "expiry target does not match canonical schedule",
         )
         return
-    location = state.locations.get(scheduled.location_id)
-    if location is None or scheduled.condition_code not in location.active_conditions:
+    location = state.locations.get(scheduled_expiry.location_id)
+    if location is None or scheduled_expiry.condition_code not in location.active_conditions:
         report.add_error(
             "invalid_scheduled_world_event",
-            f"expiry {scheduled.id} target is not active",
+            f"expiry {scheduled_expiry.id} target is not active",
         )
 
 
