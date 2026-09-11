@@ -32,6 +32,7 @@ class LocationConditionView(BaseModel):
     code: str
     name: str
     description: str
+    traversal_extra_minutes: int = 0
 
 
 class PlayerStateView(BaseModel):
@@ -110,6 +111,9 @@ def project_player_state(state: WorldState) -> PlayerStateView:
             code=condition.code,
             name=condition.name,
             description=condition.description,
+            traversal_extra_minutes=(
+                condition.traversal.extra_minutes if condition.traversal is not None else 0
+            ),
         )
         for _, condition in sorted(location.active_conditions.items())
     ]

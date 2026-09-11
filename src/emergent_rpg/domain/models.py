@@ -113,10 +113,15 @@ class NPC(Entity):
 Character = Annotated[PlayerCharacter | NPC, Field(discriminator="kind")]
 
 
+class TraversalEffect(BaseModel):
+    extra_minutes: int = Field(default=0, ge=0, le=60)
+
+
 class LocationCondition(BaseModel):
     code: str = Field(min_length=1)
     name: str = Field(min_length=1)
     description: str = Field(min_length=1)
+    traversal: TraversalEffect | None = None
 
 
 class Location(BaseModel):
