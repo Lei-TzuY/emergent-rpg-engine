@@ -4,7 +4,11 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from emergent_rpg.domain.actions import PlayerAction
-from emergent_rpg.domain.events import Event, SimulationCycleProcessed
+from emergent_rpg.domain.events import (
+    Event,
+    ScheduledLocationConditionApplied,
+    SimulationCycleProcessed,
+)
 from emergent_rpg.domain.models import GameSession, Turn, WorldState
 from emergent_rpg.engine.mystery import MysteryGraph
 from emergent_rpg.engine.narrative import DeterministicNarrativePlanner
@@ -17,7 +21,10 @@ from emergent_rpg.engine.npc import (
 )
 from emergent_rpg.engine.reducer import apply_event, replay
 from emergent_rpg.engine.resolver import ActionResult, DeterministicResolver
-from emergent_rpg.engine.simulation import DeterministicSimulationScheduler
+from emergent_rpg.engine.simulation import (
+    DeterministicSimulationScheduler,
+    DeterministicWorldEventScheduler,
+)
 from emergent_rpg.memory.models import Episode
 from emergent_rpg.persistence.db import SQLiteStore
 from emergent_rpg.providers.base import ActionParser, NarrativeGenerator
@@ -45,6 +52,7 @@ class GameEngine:
         self.npc_planner = DeterministicNPCPlanner()
         self.npc_resolver = DeterministicNPCResolver()
         self.simulation_scheduler = DeterministicSimulationScheduler()
+        self.world_event_scheduler = DeterministicWorldEventScheduler()
         self.generator = generator or ScriptedNarrativeGenerator()
 
     def new_session(self, name: str = "Ashfall Relay") -> GameSession:
@@ -246,13 +254,42 @@ class GameEngine:
         *,
         turn_number: int,
     ) -> tuple[WorldState, list[Event]]:
-        schedule = self.simulation_scheduler.due_cycles(state)
-        if not schedule.due_absolute_minutes:
+        npc_schedule = self.simulation_scheduler.due_cycles(state)
+        world_schedule = self.world_event_scheduler.due_events(state)
+        if not npc_schedule.due_absolute_minutes and not world_schedule.due_event_ids:
             return state, []
+
+        scheduled_by_id = {
+            item.id: item for item in state.scheduled_location_conditions
+        }
+        timeline: list[tuple[int, int, str, str]] = []
+        for scheduled_event_id in world_schedule.due_event_ids:
+            scheduled = scheduled_by_id[scheduled_event_id]
+            timeline.append(
+                (
+                    scheduled.due_absolute_minute,
+                    0,
+                    "world",
+                    scheduled_event_id,
+                )
+            )
+        for scheduled_minute in npc_schedule.due_absolute_minutes:
+            timeline.append((scheduled_minute, 1, "npc", ""))
+        timeline.sort()
 
         candidate = state.model_copy(deep=True)
         emitted_events: list[Event] = []
-        for scheduled_minute in schedule.due_absolute_minutes:
+        for scheduled_minute, _, kind, scheduled_event_id in timeline:
+            if kind == "world":
+                event = ScheduledLocationConditionApplied(
+                    turn_number=turn_number,
+                    scheduled_event_id=scheduled_event_id,
+                    scheduled_absolute_minute=scheduled_minute,
+                )
+                candidate = self._apply_validated_event(candidate, event)
+                emitted_events.append(event)
+                continue
+
             phase, candidate = self._execute_npc_phase_on_state(
                 candidate,
                 turn_number=turn_number,

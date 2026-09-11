@@ -99,6 +99,14 @@ class SimulationCycleProcessed(DomainEvent):
     scheduled_absolute_minute: int = Field(ge=0)
 
 
+class ScheduledLocationConditionApplied(DomainEvent):
+    type: Literal["scheduled_location_condition_applied"] = (
+        "scheduled_location_condition_applied"
+    )
+    scheduled_event_id: str
+    scheduled_absolute_minute: int = Field(ge=0)
+
+
 class StatusApplied(DomainEvent):
     type: Literal["status_applied"] = "status_applied"
     entity_id: str
@@ -121,6 +129,7 @@ Event = Annotated[
     | RelationshipChanged
     | TimeAdvanced
     | SimulationCycleProcessed
+    | ScheduledLocationConditionApplied
     | StatusApplied,
     Field(discriminator="type"),
 ]

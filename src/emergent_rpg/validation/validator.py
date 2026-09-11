@@ -10,6 +10,7 @@ from emergent_rpg.domain.events import (
     NPCGoalCompleted,
     NPCMoved,
     PlayerMoved,
+    ScheduledLocationConditionApplied,
     SimulationCycleProcessed,
     TimeAdvanced,
 )
@@ -60,6 +61,8 @@ def validate_state(state: WorldState, previous: WorldState | None = None) -> Val
                 "duplicate_unique_item",
                 f"unique item {item_id} appears in multiple inventories",
             )
+
+    _validate_scheduled_world_state(state, report)
 
     for fact_id, fact in state.facts.items():
         missing_prerequisites = fact.discovery_prerequisites - state.facts.keys()
@@ -137,6 +140,17 @@ def validate_state(state: WorldState, previous: WorldState | None = None) -> Val
             < previous.simulation.next_due_absolute_minute
         ):
             report.add_error("simulation_went_backward", "simulation cursor decreased")
+        for location_id, old_location in previous.locations.items():
+            if location_id in state.locations:
+                removed_conditions = (
+                    old_location.active_conditions.keys()
+                    - state.locations[location_id].active_conditions.keys()
+                )
+                if removed_conditions:
+                    report.add_error(
+                        "environment_went_backward",
+                        f"{location_id} lost conditions: {sorted(removed_conditions)}",
+                    )
         for entity_id, old_entity in previous.entities.items():
             if entity_id in state.entities:
                 new_entity = state.entities[entity_id]
@@ -182,7 +196,95 @@ def validate_event_preconditions(state: WorldState, event: Event) -> ValidationR
                 "invalid_simulation_cycle",
                 "simulation cycle cannot be processed before world time reaches it",
             )
+    elif isinstance(event, ScheduledLocationConditionApplied):
+        _validate_scheduled_location_condition(state, event, report)
     return report
+
+
+def _validate_scheduled_world_state(
+    state: WorldState,
+    report: ValidationReport,
+) -> None:
+    event_ids = [event.id for event in state.scheduled_location_conditions]
+    if len(event_ids) != len(set(event_ids)):
+        report.add_error("invalid_scheduled_world_event", "scheduled event ids must be unique")
+
+    targets: list[tuple[str, str]] = []
+    for event in state.scheduled_location_conditions:
+        if event.location_id not in state.locations:
+            report.add_error(
+                "invalid_scheduled_world_event",
+                f"{event.id} references missing location {event.location_id}",
+            )
+            continue
+        target = (event.location_id, event.condition.code)
+        targets.append(target)
+        if event.condition.code in state.locations[event.location_id].active_conditions:
+            report.add_error(
+                "invalid_scheduled_world_event",
+                f"{event.id} targets an already-active location condition",
+            )
+
+    duplicate_targets = [target for target, count in Counter(targets).items() if count > 1]
+    if duplicate_targets:
+        report.add_error(
+            "invalid_scheduled_world_event",
+            f"scheduled condition targets must be unique: {sorted(duplicate_targets)}",
+        )
+
+    for location_id, location in state.locations.items():
+        for key, condition in location.active_conditions.items():
+            if key != condition.code:
+                report.add_error(
+                    "invalid_location_condition",
+                    f"{location_id} condition key/code mismatch for {key}",
+                )
+
+
+def _validate_scheduled_location_condition(
+    state: WorldState,
+    event: ScheduledLocationConditionApplied,
+    report: ValidationReport,
+) -> None:
+    pending = sorted(
+        state.scheduled_location_conditions,
+        key=lambda item: (item.due_absolute_minute, item.id),
+    )
+    if not pending:
+        report.add_error(
+            "invalid_scheduled_world_event",
+            f"scheduled event {event.scheduled_event_id} is not pending",
+        )
+        return
+
+    expected = pending[0]
+    if event.scheduled_event_id != expected.id:
+        report.add_error(
+            "invalid_scheduled_world_event",
+            f"scheduled event expected {expected.id} before {event.scheduled_event_id}",
+        )
+        return
+    if event.scheduled_absolute_minute != expected.due_absolute_minute:
+        report.add_error(
+            "invalid_scheduled_world_event",
+            f"scheduled event {expected.id} minute does not match canonical schedule",
+        )
+    if expected.due_absolute_minute > state.clock.absolute_minutes:
+        report.add_error(
+            "invalid_scheduled_world_event",
+            f"scheduled event {expected.id} cannot run before its due world time",
+        )
+    location = state.locations.get(expected.location_id)
+    if location is None:
+        report.add_error(
+            "invalid_scheduled_world_event",
+            f"scheduled event {expected.id} references a missing location",
+        )
+    elif expected.condition.code in location.active_conditions:
+        report.add_error(
+            "invalid_scheduled_world_event",
+            f"scheduled event {expected.id} condition is already active",
+        )
 
 
 def _validate_npc_moved(
