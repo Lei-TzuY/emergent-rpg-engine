@@ -164,3 +164,54 @@ def test_provider_failure_is_transactionally_atomic(tmp_path: Path) -> None:
     assert store.load_state(session.id) == before
     assert store.load_events(session.id) == []
     assert store.list_turns(session.id) == []
+
+
+def test_ollama_provider_uses_local_defaults_without_generic_credentials() -> None:
+    transport = RecordingTransport(
+        {"choices": [{"message": {"content": "A local grounded line."}}]}
+    )
+    generator = build_narrative_generator(
+        NarrativeProviderName.OLLAMA,
+        env={
+            "EMERGENT_RPG_OLLAMA_MODEL": "qwen-local:latest",
+            "EMERGENT_RPG_LLM_API_KEY": "must-not-leak",
+        },
+        transport=transport,
+    )
+
+    assert generator.generate(_plan()) == "A local grounded line."
+    assert transport.url == "http://127.0.0.1:11434/v1/chat/completions"
+    assert transport.headers is not None
+    assert "Authorization" not in transport.headers
+    assert transport.payload is not None
+    assert transport.payload["model"] == "qwen-local:latest"
+
+
+def test_ollama_provider_supports_namespaced_overrides() -> None:
+    transport = RecordingTransport(
+        {"choices": [{"message": {"content": "Local override works."}}]}
+    )
+    generator = build_narrative_generator(
+        NarrativeProviderName.OLLAMA,
+        env={
+            "EMERGENT_RPG_OLLAMA_MODEL": "local-model",
+            "EMERGENT_RPG_OLLAMA_BASE_URL": "http://localhost:22434/v1/",
+            "EMERGENT_RPG_OLLAMA_API_KEY": "local-proxy-token",
+            "EMERGENT_RPG_OLLAMA_TIMEOUT": "12",
+            "EMERGENT_RPG_OLLAMA_MAX_TOKENS": "321",
+        },
+        transport=transport,
+    )
+
+    generator.generate(_plan())
+    assert transport.url == "http://localhost:22434/v1/chat/completions"
+    assert transport.headers is not None
+    assert transport.headers["Authorization"] == "Bearer local-proxy-token"
+    assert transport.timeout == 12.0
+    assert transport.payload is not None
+    assert transport.payload["max_tokens"] == 321
+
+
+def test_ollama_provider_requires_only_explicit_model() -> None:
+    with pytest.raises(ProviderConfigurationError, match="OLLAMA_MODEL"):
+        build_narrative_generator(NarrativeProviderName.OLLAMA, env={})
