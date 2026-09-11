@@ -19,7 +19,7 @@ from emergent_rpg.domain.events import (
     RelationshipChanged,
     TimeAdvanced,
 )
-from emergent_rpg.domain.models import Fact, Item, NPC, WorldState
+from emergent_rpg.domain.models import NPC, Fact, Item, WorldState
 
 
 class ActionResult(BaseModel):
@@ -218,9 +218,12 @@ class DeterministicResolver:
     def _find_npc(state: WorldState, target: str, location_id: str) -> NPC | None:
         key = target.casefold().strip()
         for entity in state.entities.values():
-            if isinstance(entity, NPC) and entity.state.current_location == location_id:
-                if key in {entity.id.casefold(), entity.name.casefold()}:
-                    return entity
+            if (
+                isinstance(entity, NPC)
+                and entity.state.current_location == location_id
+                and key in {entity.id.casefold(), entity.name.casefold()}
+            ):
+                return entity
         return None
 
     @staticmethod

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from emergent_rpg.domain.models import (
+    NPC,
     CharacterState,
     Fact,
     Item,
     Location,
-    NPC,
     NPCKnowledge,
     PlayerCharacter,
     WorldState,

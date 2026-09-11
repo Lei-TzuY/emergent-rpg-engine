@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Annotated
 
 import typer
 
@@ -10,6 +11,7 @@ from emergent_rpg.persistence.db import SQLiteStore
 
 app = typer.Typer(help="Persistent deterministic text-RPG engine demo.")
 DEFAULT_DB = Path("emergent-rpg.db")
+DB_OPTION = typer.Option("--db", help="SQLite database path.")
 
 
 def _engine(db: Path) -> GameEngine:
@@ -48,8 +50,8 @@ def _render_state(state: WorldState) -> str:
 
 @app.command("new")
 def new_game(
-    db: Path = typer.Option(DEFAULT_DB, "--db", help="SQLite database path."),
-    name: str = typer.Option("Ashfall Relay", help="Session name."),
+    db: Annotated[Path, DB_OPTION] = DEFAULT_DB,
+    name: Annotated[str, typer.Option(help="Session name.")] = "Ashfall Relay",
 ) -> None:
     engine = _engine(db)
     session = engine.new_session(name)
@@ -59,8 +61,8 @@ def new_game(
 
 @app.command()
 def status(
-    session_id: str | None = typer.Argument(None),
-    db: Path = typer.Option(DEFAULT_DB, "--db", help="SQLite database path."),
+    session_id: Annotated[str | None, typer.Argument()] = None,
+    db: Annotated[Path, DB_OPTION] = DEFAULT_DB,
 ) -> None:
     store = SQLiteStore(db)
     resolved = _resolve_session(store, session_id)
@@ -70,9 +72,9 @@ def status(
 
 @app.command()
 def history(
-    session_id: str | None = typer.Argument(None),
-    db: Path = typer.Option(DEFAULT_DB, "--db", help="SQLite database path."),
-    limit: int = typer.Option(20, min=1, max=500),
+    session_id: Annotated[str | None, typer.Argument()] = None,
+    db: Annotated[Path, DB_OPTION] = DEFAULT_DB,
+    limit: Annotated[int, typer.Option(min=1, max=500)] = 20,
 ) -> None:
     store = SQLiteStore(db)
     resolved = _resolve_session(store, session_id)
@@ -84,8 +86,8 @@ def history(
 
 @app.command()
 def play(
-    session_id: str | None = typer.Argument(None),
-    db: Path = typer.Option(DEFAULT_DB, "--db", help="SQLite database path."),
+    session_id: Annotated[str | None, typer.Argument()] = None,
+    db: Annotated[Path, DB_OPTION] = DEFAULT_DB,
 ) -> None:
     engine = _engine(db)
     resolved = _resolve_session(engine.store, session_id)
