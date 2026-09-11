@@ -45,4 +45,4 @@ packages = ["emergent_rpg"]
 
 [[tool.mypy.overrides]]
 module = "emergent_rpg.engine.resolver"
-allow_redefinition = true
+disable_error_code = ["no-redef"]
