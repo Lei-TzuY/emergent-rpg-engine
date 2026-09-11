@@ -7,8 +7,8 @@ The project advances by coherent executable slices rather than placeholder subsy
 3. **Structured LLM action parsing** — strict typed action JSON, visible-state-only prompt surface, deterministic fallback, and resolver-enforced legality. **Complete.**
 4. **Mystery graph** — deterministic clue dependencies, replayable inference provenance, observer-scoped contradictions, and discovery gates. **Complete.**
 5. **NPC autonomous planning** — structured goals, epistemically scoped planning contexts, bounded typed intents, deterministic NPC resolution, and replayable goal progress. **Complete.**
-6. **World simulation between player turns** — scheduled NPC phases, time-aware off-screen consequences, and deterministic simulation cadence. **Next.**
-7. **Vector/embedding retrieval** — optional semantic retrieval alongside deterministic ranking.
+6. **World simulation between player turns** — canonical simulation cursor, replayable cadence markers, bounded catch-up, and time-aware off-screen NPC consequences. **Complete.**
+7. **Vector/embedding retrieval** — optional semantic retrieval alongside deterministic ranking, with deterministic fallback and no truth authority. **Next.**
 8. **Local-model support / Ollama** — explicit local-model presets/routing beyond the generic OpenAI-compatible endpoint.
 9. **Web API** — stable service boundary over the core engine.
 10. **Web UI** — presentation layer over persisted sessions.
@@ -59,6 +59,22 @@ NPC structured goals + own knowledge + local observations
 
 The planner never receives the full `WorldState`. Its context contains only the NPC's own known facts/beliefs/relationships, configured goals, current location, local exits, visible NPCs/items, inventory, and blocking status. A global `max_actions` budget counts attempted intents, not only successful actions. Goal completion is canonical and replayable through `NPCGoalCompleted`, while movement and discovered facts still pass the normal validator/reducer path.
 
-## Promotion gate for Milestone 6
+## Milestone 6 invariant
 
-World simulation must decide *when* autonomous phases occur without weakening the Milestone 5 authority boundary. Scheduling, off-screen time advancement, and consequences must be deterministic/replayable; simulation may invoke NPC planning/resolution but must not let schedulers or planners mutate canonical state directly.
+World simulation decides *when* autonomous phases run without becoming a mutation authority:
+
+```text
+accepted player events advance canonical clock
+→ deterministic scheduler reads SimulationState cursor
+→ bounded due-cycle list
+→ off-screen NPC planner / deterministic resolver
+→ ordinary validated NPC events
+→ SimulationCycleProcessed cursor marker
+→ one atomic player-turn commit
+```
+
+The scheduler never mutates state directly. `SimulationCycleProcessed` must match the exact canonical cursor and cannot be applied before world time reaches that minute. Automatic cycles skip NPCs currently co-located with the player, preventing hidden background execution from invalidating an interaction that is visibly in progress. Catch-up is bounded per player turn, and backlog remains explicit in the cursor for later turns. Off-screen NPC identities and private consequences are not copied into the player-facing turn/episode memory surface.
+
+## Promotion gate for Milestone 7
+
+Vector/embedding retrieval may improve ranking, but it must remain an optional retrieval aid rather than canonical truth. Missing, stale, malformed, or adversarial vector results must not alter world state or disclose facts outside the observer's canonical knowledge. Deterministic retrieval must remain available as a fallback and CI must not require an external vector service.
