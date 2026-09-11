@@ -16,7 +16,7 @@ Action
 
 ### 1. Action
 
-`ActionParser` converts input into a structured action (`move`, `inspect`, `talk`, `take`, `wait`, or freeform fallback). The demo currently uses `DeterministicActionParser`; structured LLM parsing is a later milestone.
+`ActionParser` converts input into a structured action (`move`, `inspect`, `talk`, `take`, `wait`, or freeform fallback). The default is `DeterministicActionParser`; `OpenAICompatibleActionParser` can optionally translate natural language into the same strict action union before deterministic resolution.
 
 ### 2. Resolution
 
@@ -119,3 +119,22 @@ If the external provider times out, rejects the request, or returns malformed JS
 The production transport uses the Python standard library (`urllib`) and enforces a bounded response size. Tests inject a fake transport, so CI never requires network access.
 
 Provider credentials come from environment variables and are only used to build the HTTP `Authorization` header. They are not persisted in game state, event payloads, turns, episodes, or repository files.
+
+## Structured action parsing boundary
+
+An optional `OpenAICompatibleActionParser` translates natural language into the existing `PlayerAction` union. It does not resolve or execute actions.
+
+The provider sees only a deliberately reduced interaction surface:
+
+- current location name
+- exit aliases / destination names
+- visible item names
+- co-located alive and conscious NPC names
+- player inventory names
+- whether an incapacitating condition blocks movement
+
+It does **not** receive canonical facts, clue propositions, NPC goals, relationships, beliefs, or private NPC knowledge. This keeps action understanding separate from privileged world truth.
+
+Action JSON is parsed through the same Pydantic discriminated union used by the engine, with extra fields forbidden. A provider cannot smuggle mutation instructions beside a valid action. `FallbackActionParser` catches typed provider failures and delegates to `DeterministicActionParser`, with a standard-library warning log for observability.
+
+A successfully parsed action still has no authority. For example, a model may propose `{"kind":"move","destination":"moon"}`; `DeterministicResolver` rejects it because no such exit exists. The rejection may be recorded as a turn, but canonical state and the append-only material event stream remain unchanged.

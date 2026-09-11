@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import shlex
 
 from emergent_rpg.domain.actions import (
@@ -14,6 +15,9 @@ from emergent_rpg.domain.actions import (
 from emergent_rpg.domain.models import WorldState
 from emergent_rpg.engine.narrative import ScenePlan
 from emergent_rpg.providers.base import ActionParser, MemorySummarizer, NarrativeGenerator
+from emergent_rpg.providers.errors import ProviderError
+
+logger = logging.getLogger(__name__)
 
 
 class DeterministicActionParser(ActionParser):
@@ -43,6 +47,19 @@ class DeterministicActionParser(ActionParser):
                 minutes = 10
             return WaitAction(minutes=max(1, min(minutes, 24 * 60)))
         return FreeformAction(text=stripped)
+
+
+class FallbackActionParser(ActionParser):
+    def __init__(self, primary: ActionParser, fallback: ActionParser) -> None:
+        self.primary = primary
+        self.fallback = fallback
+
+    def parse(self, text: str, state: WorldState) -> PlayerAction:
+        try:
+            return self.primary.parse(text, state)
+        except ProviderError as exc:
+            logger.warning("action parser provider failed; using deterministic fallback: %s", exc)
+            return self.fallback.parse(text, state)
 
 
 class StubActionParser(ActionParser):

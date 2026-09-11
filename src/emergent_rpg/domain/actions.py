@@ -2,35 +2,39 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 
-class MoveAction(BaseModel):
+class ActionModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class MoveAction(ActionModel):
     kind: Literal["move"] = "move"
-    destination: str
+    destination: str = Field(min_length=1)
 
 
-class InspectAction(BaseModel):
+class InspectAction(ActionModel):
     kind: Literal["inspect"] = "inspect"
-    target: str
+    target: str = Field(min_length=1)
 
 
-class TalkAction(BaseModel):
+class TalkAction(ActionModel):
     kind: Literal["talk"] = "talk"
-    target: str
+    target: str = Field(min_length=1)
 
 
-class TakeAction(BaseModel):
+class TakeAction(ActionModel):
     kind: Literal["take"] = "take"
-    target: str
+    target: str = Field(min_length=1)
 
 
-class WaitAction(BaseModel):
+class WaitAction(ActionModel):
     kind: Literal["wait"] = "wait"
     minutes: int = Field(default=10, ge=1, le=24 * 60)
 
 
-class FreeformAction(BaseModel):
+class FreeformAction(ActionModel):
     kind: Literal["freeform"] = "freeform"
     text: str
 
@@ -39,3 +43,9 @@ PlayerAction = Annotated[
     MoveAction | InspectAction | TalkAction | TakeAction | WaitAction | FreeformAction,
     Field(discriminator="kind"),
 ]
+
+ACTION_ADAPTER: TypeAdapter[PlayerAction] = TypeAdapter(PlayerAction)
+
+
+def parse_action(data: object) -> PlayerAction:
+    return ACTION_ADAPTER.validate_python(data)
