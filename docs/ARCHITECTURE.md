@@ -129,12 +129,13 @@ The provider layer defines replaceable interfaces for:
 - `NarrativeGenerator`
 - `MemorySummarizer`
 
-Two narrative generators currently exist:
+Narration/action parsing can use the generic OpenAI-compatible path or the explicit `ollama` preset. The Ollama preset is a routing/configuration layer only: it builds the same `OpenAICompatibleConfig`/client with a default local base URL and then enters the exact same constrained narration or action-parser boundary.
 
-- `ScriptedNarrativeGenerator` — deterministic, offline, used by default and by long-run tests.
-- `OpenAICompatibleNarrativeGenerator` — sends a constrained `ScenePlan` to a configurable `/chat/completions` endpoint through a small injectable JSON transport.
+### Ollama/local preset
 
-The provider implementation lives entirely outside domain models, resolution, reducers, validators, and persistence.
+Selecting `ollama` for either narration or action parsing requires only `EMERGENT_RPG_OLLAMA_MODEL`; the default endpoint is `http://127.0.0.1:11434/v1`. Optional `EMERGENT_RPG_OLLAMA_BASE_URL`, `EMERGENT_RPG_OLLAMA_API_KEY`, `EMERGENT_RPG_OLLAMA_TIMEOUT`, `EMERGENT_RPG_OLLAMA_TEMPERATURE`, and `EMERGENT_RPG_OLLAMA_MAX_TOKENS` settings are namespaced separately from generic provider configuration. Generic `EMERGENT_RPG_LLM_API_KEY` is not inherited by the local preset.
+
+Tests inject the same fake `JsonTransport` used by the generic provider tests, so CI verifies URL/model/header/payload routing and action-parser knowledge isolation without starting a real Ollama daemon.
 
 ### Failure atomicity
 
