@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ashfall Relay — emergent-rpg-engine</title>
+  <meta name="description" content="Browser client for the persistent Ashfall Relay RPG engine.">
+  <link rel="stylesheet" href="/ui/styles.css">
+</head>
+<body>
+  <main class="app-shell" id="app-shell" aria-busy="false">
+    <header class="masthead">
+      <div>
+        <p class="eyebrow">emergent-rpg-engine</p>
+        <h1>Ashfall Relay</h1>
+        <p class="subtitle">Canonical state. Replayable consequences. No transcript amnesia.</p>
+      </div>
+      <div class="connection-pill" id="connection-state" aria-live="polite">Idle</div>
+    </header>
+
+    <section class="session-bar" aria-label="Session controls">
+      <button class="primary" id="new-session" type="button">New session</button>
+      <label class="session-field">
+        <span>Session ID</span>
+        <input id="session-id" autocomplete="off" spellcheck="false" placeholder="Paste a session id">
+      </label>
+      <button id="load-session" type="button">Load</button>
+    </section>
+
+    <div class="error-banner" id="error-banner" role="alert" hidden></div>
+
+    <section class="workspace">
+      <aside class="state-panel" aria-label="Current state">
+        <div class="panel-heading">
+          <p class="eyebrow">Current state</p>
+          <h2 id="location-name">No session loaded</h2>
+          <p id="world-time">—</p>
+        </div>
+
+        <section class="state-block">
+          <h3>Exits</h3>
+          <div class="chip-list" id="exits"><span class="muted">—</span></div>
+        </section>
+        <section class="state-block">
+          <h3>Visible items</h3>
+          <div class="chip-list" id="visible-items"><span class="muted">—</span></div>
+        </section>
+        <section class="state-block">
+          <h3>NPCs</h3>
+          <div class="chip-list" id="visible-npcs"><span class="muted">—</span></div>
+        </section>
+        <section class="state-block">
+          <h3>Inventory</h3>
+          <div class="chip-list" id="inventory"><span class="muted">empty</span></div>
+        </section>
+        <section class="state-block">
+          <h3>Known facts</h3>
+          <ul class="facts" id="known-facts"><li class="muted">none yet</li></ul>
+        </section>
+      </aside>
+
+      <section class="story-panel" aria-label="Story history">
+        <div class="panel-heading story-heading">
+          <div>
+            <p class="eyebrow">Session history</p>
+            <h2>Relay log</h2>
+          </div>
+          <span class="turn-counter" id="turn-counter">Turn 0</span>
+        </div>
+        <ol class="history" id="history-log">
+          <li class="empty-history">Create or load a session to begin.</li>
+        </ol>
+
+        <form class="command-bar" id="action-form">
+          <label for="action-input">What do you do?</label>
+          <div class="command-row">
+            <input
+              id="action-input"
+              name="action"
+              autocomplete="off"
+              maxlength="4000"
+              placeholder="inspect room, take brass key, talk Lio Marr…"
+              required
+            >
+            <button class="primary" id="send-action" type="submit">Send</button>
+          </div>
+          <p class="hint">Commands are resolved by the same deterministic engine used by the CLI.</p>
+        </form>
+      </section>
+    </section>
+  </main>
+
+  <script type="module" src="/ui/app.js"></script>
+</body>
+</html>

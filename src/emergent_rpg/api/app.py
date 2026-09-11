@@ -4,6 +4,8 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, status
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from emergent_rpg.api.models import (
     ActionRequest,
@@ -40,6 +42,12 @@ def create_app(
     engine = GameEngine(store, generator=generator, parser=parser)
 
     app = FastAPI(title="emergent-rpg-engine", version="0.1.0")
+    static_dir = Path(__file__).resolve().parent.parent / "web" / "static"
+    app.mount("/ui", StaticFiles(directory=static_dir, html=True), name="ui")
+
+    @app.get("/", include_in_schema=False)
+    def browser_root() -> RedirectResponse:
+        return RedirectResponse(url="/ui/")
 
     @app.get("/health")
     def health() -> dict[str, str]:
