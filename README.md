@@ -112,7 +112,13 @@ Run one explicit autonomous phase with:
 emergent-rpg npc-step --max-actions 3
 ```
 
-The current demo lets Dax pursue a location goal and Lio investigate a locally visible clue. NPC-acquired knowledge remains private unless later transferred through ordinary game mechanics. Autonomous phases are persisted and replayable, but they do not yet auto-run between player turns; that scheduling/time-simulation layer is the next milestone.
+The current demo lets Dax pursue a location goal and Lio investigate a locally visible clue. NPC-acquired knowledge remains private unless later transferred through ordinary game mechanics. Explicit `npc-step` phases remain available for debugging, while accepted player actions now also trigger deterministic off-screen simulation when the canonical world clock reaches a scheduled cadence.
+
+## Deterministic world simulation
+
+The canonical world carries a five-minute simulation cadence and replayable next-due cursor. Accepted player actions that advance time can trigger bounded off-screen NPC cycles before the turn is committed. Each processed slot is recorded as a `SimulationCycleProcessed` event, so the scheduling decision itself can be replayed and validated rather than existing as hidden process state.
+
+Automatic cycles skip NPCs currently sharing the player's location. This keeps visible conversations/interactions stable while still allowing remote NPCs to move, investigate evidence, and update private knowledge. A large time jump processes at most the configured catch-up budget in one player turn; any remaining backlog stays explicit for later turns. Player narration and episodic-memory metadata do not receive hidden NPC identities merely because a background cycle occurred.
 
 ## Demo world: Ashfall Relay
 
@@ -130,7 +136,7 @@ CI runs all three checks on Python 3.12. Provider tests inject an in-memory tran
 
 ## Current limitations
 
-Automatic world simulation between player turns, vector retrieval, web APIs, web UI, richer combat/stat systems, provider routing, and cost controls are future work.
+Vector retrieval, web APIs, web UI, richer combat/stat systems, provider routing, and cost controls are future work. World simulation currently covers deterministic cadence plus off-screen NPC goals; richer scheduled world events and non-NPC environmental systems remain future extensions.
 
 The OpenAI-compatible provider currently targets the common `/chat/completions` JSON shape and intentionally supports text responses only. Live endpoint interoperability depends on the selected server/model and is not claimed by offline CI.
 
