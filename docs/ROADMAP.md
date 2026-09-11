@@ -11,8 +11,8 @@ The project advances by coherent executable slices rather than placeholder subsy
 7. **Vector/embedding retrieval** — optional vector cosine reranking over persisted episodes, deterministic fallback, malformed-output rejection, and no truth authority. **Complete.**
 8. **Local-model support / Ollama** — explicit Ollama narration/action-parser presets, local defaults, namespaced configuration, and offline transport tests. **Complete.**
 9. **Web API** — thin FastAPI boundary over `GameEngine`, player-visible state projection, persisted session/history/action endpoints, and HTTP failure atomicity. **Complete.**
-10. **Web UI** — browser presentation layer over the stable API boundary. **Next.**
-11. **Model routing / cost controls** — per-stage provider selection, budgets, and caching.
+10. **Web UI** — same-origin API-backed browser client with session lifecycle, player-visible state/history rendering, action submission, explicit loading/error states, and packaged static assets. **Complete.**
+11. **Model routing / cost controls** — per-stage provider selection, budgets, and caching. **Next.**
 12. **Evaluation harness for 1,000+ turn consistency** — repeatable long-run continuity metrics and adversarial scenarios.
 
 ## Milestone 3 invariant
@@ -122,6 +122,21 @@ HTTP request
 
 Handlers do not construct or reduce domain events and do not write canonical state directly. Session/action responses serialize a dedicated player-visible projection instead of raw `WorldState`, so undiscovered fact truth/source metadata, NPC private knowledge, planning goals, relationships, inference rules, and simulation internals remain hidden. History omits internal involved-entity/tag metadata. Malformed requests are rejected before engine execution; unknown sessions map to `404`, transition invariant failures to `409`, and provider failures to `502` while preserving the engine's pre-commit atomicity. In-process API tests also prove persisted state remains replay-equivalent after accepted HTTP actions.
 
-## Promotion gate for Milestone 10
+## Milestone 10 invariant
 
-The Web UI must consume the Web API rather than importing engine internals or reading SQLite directly. It may render player-visible state, history, and action responses, but it must not reconstruct hidden canonical state client-side or add a parallel mutation channel. UI integration tests should exercise the API contract and preserve loading/error states for rejected actions and provider failures.
+The browser is a client of the Web API, never a client-side engine:
+
+```text
+browser DOM
+→ same-origin fetch()
+→ player-visible Web API contract
+→ GameEngine authority boundary
+→ player-visible response
+→ DOM rendering
+```
+
+The JavaScript does not import Python engine code, read SQLite, create domain events, or infer hidden canonical state. It renders only the bounded Milestone 9 response models and writes returned world/player strings with DOM `textContent`. Session creation/loading, bounded history, action submission, busy state, deterministic rejection, and request/provider errors all flow through the existing API contract. Static browser assets are explicitly included in the wheel and CI opens the built wheel to verify the three required distribution paths, preventing a source-checkout-only UI from being treated as a completed feature.
+
+## Promotion gate for Milestone 11
+
+Model routing/cost controls must remain policy around existing provider boundaries rather than a new state authority. Routing may choose provider/model separately for parsing and narration, enforce bounded request/token budgets, and reuse safe cached language outputs, but budget/cache metadata must not become canonical world truth. A denied/exhausted provider call must fail or fall back according to explicit policy without partially committing a turn. Tests must prove deterministic policy selection, budget accounting, cache-key isolation across stage/model/configuration, and transaction atomicity without requiring external model services.
