@@ -10,6 +10,7 @@ from emergent_rpg.domain.actions import MoveAction
 from emergent_rpg.engine.service import GameEngine
 from emergent_rpg.persistence.db import SQLiteStore
 from emergent_rpg.providers.errors import ProviderResponseError
+from emergent_rpg.providers.factory import ActionParserName, build_action_parser
 from emergent_rpg.providers.openai_compatible import (
     OpenAICompatibleActionParser,
     OpenAICompatibleConfig,
@@ -115,3 +116,22 @@ def test_impossible_model_action_cannot_mutate_canonical_state(tmp_path: Path) -
     turns = store.list_turns(session.id)
     assert len(turns) == 1
     assert not turns[0].accepted
+
+
+def test_ollama_action_parser_preset_routes_through_existing_safety_boundary() -> None:
+    state = build_demo_world()
+    transport = RecordingTransport('{"kind":"move","destination":"operations"}')
+    parser = build_action_parser(
+        ActionParserName.OLLAMA,
+        env={"EMERGENT_RPG_OLLAMA_MODEL": "qwen-local:latest"},
+        transport=transport,
+    )
+
+    action = parser.parse("Head to operations.", state)
+
+    assert action == MoveAction(destination="operations")
+    assert transport.payload is not None
+    assert transport.payload["model"] == "qwen-local:latest"
+    wire = json.dumps(transport.payload, sort_keys=True)
+    for fact in state.facts.values():
+        assert fact.proposition not in wire
