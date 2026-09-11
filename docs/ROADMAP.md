@@ -8,8 +8,8 @@ The project advances by coherent executable slices rather than placeholder subsy
 4. **Mystery graph** — deterministic clue dependencies, replayable inference provenance, observer-scoped contradictions, and discovery gates. **Complete.**
 5. **NPC autonomous planning** — structured goals, epistemically scoped planning contexts, bounded typed intents, deterministic NPC resolution, and replayable goal progress. **Complete.**
 6. **World simulation between player turns** — canonical simulation cursor, replayable cadence markers, bounded catch-up, and time-aware off-screen NPC consequences. **Complete.**
-7. **Vector/embedding retrieval** — optional semantic retrieval alongside deterministic ranking, with deterministic fallback and no truth authority. **Next.**
-8. **Local-model support / Ollama** — explicit local-model presets/routing beyond the generic OpenAI-compatible endpoint.
+7. **Vector/embedding retrieval** — optional vector cosine reranking over persisted episodes, deterministic fallback, malformed-output rejection, and no truth authority. **Complete.**
+8. **Local-model support / Ollama** — explicit local-model presets/routing beyond the generic OpenAI-compatible endpoint. **Next.**
 9. **Web API** — stable service boundary over the core engine.
 10. **Web UI** — presentation layer over persisted sessions.
 11. **Model routing / cost controls** — per-stage provider selection, budgets, and caching.
@@ -75,6 +75,21 @@ accepted player events advance canonical clock
 
 The scheduler never mutates state directly. `SimulationCycleProcessed` must match the exact canonical cursor and cannot be applied before world time reaches that minute. Automatic cycles skip NPCs currently co-located with the player, preventing hidden background execution from invalidating an interaction that is visibly in progress. Catch-up is bounded per player turn, and backlog remains explicit in the cursor for later turns. Off-screen NPC identities and private consequences are not copied into the player-facing turn/episode memory surface.
 
-## Promotion gate for Milestone 7
+## Milestone 7 invariant
 
-Vector/embedding retrieval may improve ranking, but it must remain an optional retrieval aid rather than canonical truth. Missing, stale, malformed, or adversarial vector results must not alter world state or disclose facts outside the observer's canonical knowledge. Deterministic retrieval must remain available as a fallback and CI must not require an external vector service.
+Vector retrieval is a ranking aid, never a source of truth:
+
+```text
+persisted candidate episodes
+→ deterministic baseline ranking inputs
+→ optional EmbeddingBackend(query + existing episode summaries)
+→ validated fixed-width finite vectors
+→ cosine score blended with deterministic score
+→ bounded episode list
+```
+
+The embedding backend cannot return episode IDs or facts, so it cannot inject new memory objects. Canonical semantic facts remain sourced only from the observer's already-known fact IDs. Wrong vector counts, inconsistent dimensions, non-finite values, and backend exceptions discard semantic enrichment and fall back to deterministic ranking. The built-in feature-hashing backend is deterministic, dependency-free, and keeps CI offline.
+
+## Promotion gate for Milestone 8
+
+Local-model support must make Ollama/local OpenAI-compatible usage explicit without weakening provider boundaries or embedding credentials/configuration into canonical state. Local presets must remain replaceable, action parsing and narration must keep their existing authority limits, and CI must validate configuration/transport behavior without requiring a live Ollama daemon.
