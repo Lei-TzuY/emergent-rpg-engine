@@ -7,6 +7,7 @@ const ui = {
   loadSession: document.querySelector("#load-session"),
   location: document.querySelector("#location-name"),
   worldTime: document.querySelector("#world-time"),
+  conditions: document.querySelector("#location-conditions"),
   exits: document.querySelector("#exits"),
   items: document.querySelector("#visible-items"),
   npcs: document.querySelector("#visible-npcs"),
@@ -84,10 +85,27 @@ function renderChips(container, values, fallback = "—") {
   });
 }
 
+function renderConditions(conditions) {
+  ui.conditions.replaceChildren();
+  if (!conditions.length) {
+    const empty = document.createElement("li");
+    empty.className = "muted";
+    empty.textContent = "none";
+    ui.conditions.append(empty);
+    return;
+  }
+  conditions.forEach((condition) => {
+    const item = document.createElement("li");
+    item.textContent = `${condition.name}: ${condition.description}`;
+    ui.conditions.append(item);
+  });
+}
+
 function renderState(view) {
   ui.location.textContent = view.location_name;
   ui.worldTime.textContent = `${view.time} · Turn ${view.turn_number}`;
   ui.turnCounter.textContent = `Turn ${view.turn_number}`;
+  renderConditions(view.location_conditions || []);
   renderChips(ui.exits, Object.entries(view.exits).map(([alias, name]) => `${alias} → ${name}`));
   renderChips(ui.items, view.visible_items.map((item) => item.name), "nothing portable");
   renderChips(ui.npcs, view.visible_npcs.map((npc) => npc.name), "none");
