@@ -13,6 +13,7 @@ from emergent_rpg.domain.events import (
     NPCMoved,
     PlayerMoved,
     RelationshipChanged,
+    SimulationCycleProcessed,
     StatusApplied,
     TimeAdvanced,
 )
@@ -89,6 +90,10 @@ def apply_event(state: WorldState, event: Event) -> WorldState:
         source.relationships[event.target_id] = max(-100, min(100, current + event.delta))
     elif isinstance(event, TimeAdvanced):
         new_state.clock = new_state.clock.advanced(event.minutes)
+    elif isinstance(event, SimulationCycleProcessed):
+        new_state.simulation.next_due_absolute_minute = (
+            event.scheduled_absolute_minute + new_state.simulation.cadence_minutes
+        )
     elif isinstance(event, StatusApplied):
         char = new_state.entities[event.entity_id].state
         if all(status.code != event.code for status in char.status_conditions):

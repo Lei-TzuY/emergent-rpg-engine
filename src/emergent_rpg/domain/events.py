@@ -94,6 +94,11 @@ class TimeAdvanced(DomainEvent):
     minutes: int = Field(gt=0)
 
 
+class SimulationCycleProcessed(DomainEvent):
+    type: Literal["simulation_cycle_processed"] = "simulation_cycle_processed"
+    scheduled_absolute_minute: int = Field(ge=0)
+
+
 class StatusApplied(DomainEvent):
     type: Literal["status_applied"] = "status_applied"
     entity_id: str
@@ -115,6 +120,7 @@ Event = Annotated[
     | NPCLearnedFact
     | RelationshipChanged
     | TimeAdvanced
+    | SimulationCycleProcessed
     | StatusApplied,
     Field(discriminator="type"),
 ]

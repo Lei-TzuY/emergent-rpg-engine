@@ -11,6 +11,7 @@ Action
 → Retrieval
 → ScenePlan
 → Narrative Provider
+→ Due world-simulation cycles
 → Atomic Commit
 ```
 
@@ -76,7 +77,17 @@ NPC autonomy is split into planning and execution so that intent generation cann
 
 `DeterministicNPCPlanner` emits a bounded `NPCPlan` of typed intents. Milestone 5 currently supports reach-location and investigate-item goals. `DeterministicNPCResolver` rechecks the evolving canonical candidate before producing `NPCMoved`, `FactDiscovered`, and `NPCGoalCompleted` events; the planner itself has no event/state write API.
 
-`GameEngine.run_npc_phase()` applies a global attempted-intent budget, validates/reduces each emitted event, evaluates mystery inference for the acting NPC using only that NPC's knowledge, validates the resulting world, and commits the whole autonomous phase atomically. A phase with no material events is not persisted. The debug/admin CLI exposes this explicitly as `emergent-rpg npc-step`; automatic scheduling between player turns is intentionally deferred to the world-simulation milestone.
+`GameEngine.run_npc_phase()` applies a global attempted-intent budget, validates/reduces each emitted event, evaluates mystery inference for the acting NPC using only that NPC's knowledge, validates the resulting world, and commits the whole autonomous phase atomically. A phase with no material events is not persisted. The debug/admin CLI exposes this explicitly as `emergent-rpg npc-step`.
+
+## Deterministic world simulation
+
+`WorldState.simulation` carries canonical cadence configuration and the next due absolute minute. `DeterministicSimulationScheduler` is read-only: it computes a bounded list of due cycle minutes from the canonical clock/cursor and reports whether backlog remains. It cannot write state.
+
+After an accepted player action is resolved, validated, planned, and successfully narrated, the engine processes any due cycles in the same in-memory candidate. Each cycle invokes the existing NPC planning/resolution path with `offscreen_only=True`, so an NPC currently co-located with the player cannot silently act between visible interactions. NPC events still pass ordinary precondition validation, reduction, mystery inference, and world validation.
+
+Every processed cadence slot ends with a `SimulationCycleProcessed` event. Its validator requires the exact current cursor and rejects future/out-of-order markers; the reducer advances the cursor by the configured cadence. The whole set of player events plus background events plus cadence markers is committed in one SQLite transaction and replays to the same projection. Automatic simulation does not create extra player turn numbers.
+
+Background identities/events stay out of the player-facing `Turn.involved_entities` and `Episode` metadata unless the player action itself involved them. This prevents retrieval metadata from becoming an accidental private-world side channel.
 
 ## Memory
 
@@ -127,6 +138,8 @@ resolve
 → validate candidate
 → build + validate ScenePlan
 → generate narration
+→ process due deterministic world-simulation cycles
+→ validate final candidate
 → commit events + state + turn + episode
 ```
 
