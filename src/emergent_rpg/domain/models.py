@@ -1,0 +1,166 @@
+from __future__ import annotations
+
+from enum import StrEnum
+from typing import Annotated, Literal
+
+from pydantic import BaseModel, Field, model_validator
+
+EntityId = str
+LocationId = str
+ItemId = str
+FactId = str
+SessionId = str
+
+
+class TruthStatus(StrEnum):
+    TRUE = "true"
+    FALSE = "false"
+    UNCERTAIN = "uncertain"
+
+
+class WorldClock(BaseModel):
+    day: int = Field(default=1, ge=1)
+    minute_of_day: int = Field(default=8 * 60, ge=0, lt=24 * 60)
+
+    def advanced(self, minutes: int) -> WorldClock:
+        total = (self.day - 1) * 24 * 60 + self.minute_of_day + minutes
+        if total < 0:
+            raise ValueError("world clock cannot go backward before day 1")
+        return WorldClock(day=(total // (24 * 60)) + 1, minute_of_day=total % (24 * 60))
+
+    @property
+    def absolute_minutes(self) -> int:
+        return (self.day - 1) * 24 * 60 + self.minute_of_day
+
+    def display(self) -> str:
+        hour, minute = divmod(self.minute_of_day, 60)
+        return f"Day {self.day}, {hour:02d}:{minute:02d}"
+
+
+class StatusCondition(BaseModel):
+    code: str
+    name: str
+    incapacitating: bool = False
+
+
+class Relationship(BaseModel):
+    target_id: EntityId
+    score: int = Field(default=0, ge=-100, le=100)
+
+
+class NPCKnowledge(BaseModel):
+    facts_known: set[FactId] = Field(default_factory=set)
+    beliefs: dict[str, str] = Field(default_factory=dict)
+
+
+class CharacterState(BaseModel):
+    health: int = Field(default=10, ge=0, le=10)
+    stamina: int = Field(default=10, ge=0, le=10)
+    status_conditions: list[StatusCondition] = Field(default_factory=list)
+    inventory: list[ItemId] = Field(default_factory=list)
+    current_location: LocationId
+    alive: bool = True
+    conscious: bool = True
+
+    @model_validator(mode="after")
+    def life_consistency(self) -> CharacterState:
+        if self.health == 0 and self.alive:
+            raise ValueError("health 0 cannot be alive")
+        if not self.alive and self.conscious:
+            raise ValueError("dead character cannot be conscious")
+        return self
+
+
+class Entity(BaseModel):
+    id: EntityId
+    name: str
+    description: str = ""
+    faction: str | None = None
+
+
+class PlayerCharacter(Entity):
+    kind: Literal["player"] = "player"
+    state: CharacterState
+
+
+class NPC(Entity):
+    kind: Literal["npc"] = "npc"
+    state: CharacterState
+    goals: list[str] = Field(default_factory=list)
+    relationships: dict[EntityId, int] = Field(default_factory=dict)
+    knowledge: NPCKnowledge = Field(default_factory=NPCKnowledge)
+
+
+Character = Annotated[PlayerCharacter | NPC, Field(discriminator="kind")]
+
+
+class Location(BaseModel):
+    id: LocationId
+    name: str
+    description: str
+    exits: dict[str, LocationId] = Field(default_factory=dict)
+
+
+class Item(BaseModel):
+    id: ItemId
+    name: str
+    item_type: str
+    description: str = ""
+    owner_id: EntityId | None = None
+    location_id: LocationId | None = None
+    unique: bool = True
+    flags: set[str] = Field(default_factory=set)
+    reveals_fact_id: FactId | None = None
+
+    @model_validator(mode="after")
+    def exactly_one_holder(self) -> Item:
+        if (self.owner_id is None) == (self.location_id is None):
+            raise ValueError("item must have exactly one owner or location")
+        return self
+
+
+class Fact(BaseModel):
+    id: FactId
+    proposition: str
+    truth_status: TruthStatus = TruthStatus.TRUE
+    discoverability: str = "discoverable"
+    source: str
+    related_entities: set[EntityId] = Field(default_factory=set)
+    tags: set[str] = Field(default_factory=set)
+
+
+class WorldState(BaseModel):
+    turn_number: int = Field(default=0, ge=0)
+    clock: WorldClock = Field(default_factory=WorldClock)
+    player_id: EntityId
+    entities: dict[EntityId, Character]
+    locations: dict[LocationId, Location]
+    items: dict[ItemId, Item]
+    facts: dict[FactId, Fact]
+    player_known_facts: set[FactId] = Field(default_factory=set)
+    factions: set[str] = Field(default_factory=set)
+
+    def player(self) -> PlayerCharacter:
+        entity = self.entities[self.player_id]
+        if not isinstance(entity, PlayerCharacter):
+            raise TypeError("player_id does not reference a PlayerCharacter")
+        return entity
+
+
+class GameSession(BaseModel):
+    id: SessionId
+    name: str
+    world_pack: str
+    created_at: str
+
+
+class Turn(BaseModel):
+    session_id: SessionId
+    turn_number: int
+    raw_input: str
+    accepted: bool
+    reason: str | None = None
+    narration: str
+    location_id: LocationId
+    involved_entities: set[EntityId] = Field(default_factory=set)
+    tags: set[str] = Field(default_factory=set)
