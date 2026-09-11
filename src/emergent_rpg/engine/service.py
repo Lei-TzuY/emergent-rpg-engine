@@ -7,6 +7,13 @@ from emergent_rpg.domain.actions import PlayerAction
 from emergent_rpg.domain.models import GameSession, Turn, WorldState
 from emergent_rpg.engine.mystery import MysteryGraph
 from emergent_rpg.engine.narrative import DeterministicNarrativePlanner
+from emergent_rpg.engine.npc import (
+    DeterministicNPCPlanner,
+    DeterministicNPCResolver,
+    NPCDecision,
+    NPCPhaseResult,
+    build_npc_planning_context,
+)
 from emergent_rpg.engine.reducer import apply_event, replay
 from emergent_rpg.engine.resolver import ActionResult, DeterministicResolver
 from emergent_rpg.memory.models import Episode
@@ -33,6 +40,8 @@ class GameEngine:
         self.resolver = DeterministicResolver()
         self.planner = DeterministicNarrativePlanner()
         self.mystery = MysteryGraph()
+        self.npc_planner = DeterministicNPCPlanner()
+        self.npc_resolver = DeterministicNPCResolver()
         self.generator = generator or ScriptedNarrativeGenerator()
 
     def new_session(self, name: str = "Ashfall Relay") -> GameSession:
@@ -139,6 +148,104 @@ class GameEngine:
         )
         self.store.commit_turn(session_id, candidate, result.emitted_events, turn, episode)
         return result, narration, candidate
+
+    def run_npc_phase(
+        self,
+        session_id: str,
+        max_actions: int = 3,
+    ) -> tuple[NPCPhaseResult, WorldState]:
+        if not 1 <= max_actions <= 20:
+            raise ValueError("max_actions must be between 1 and 20")
+
+        before = self.store.load_state(session_id)
+        candidate = before.model_copy(deep=True)
+        turn_number = before.turn_number + 1
+        decisions: list[NPCDecision] = []
+        emitted_events = []
+        involved_npc_ids: set[str] = set()
+        actions_attempted = 0
+        actions_executed = 0
+
+        npc_ids = sorted(
+            entity_id
+            for entity_id, entity in candidate.entities.items()
+            if entity.kind == "npc"
+        )
+        for npc_id in npc_ids:
+            if actions_attempted >= max_actions:
+                break
+            context = build_npc_planning_context(candidate, npc_id)
+            plan = self.npc_planner.plan(context, max_steps=1)
+            for intent in plan.intents:
+                if actions_attempted >= max_actions:
+                    break
+                actions_attempted += 1
+                action_result = self.npc_resolver.resolve(
+                    candidate,
+                    npc_id,
+                    intent,
+                    turn_number,
+                )
+                decisions.append(
+                    NPCDecision(
+                        npc_id=npc_id,
+                        intent=intent,
+                        accepted=action_result.accepted,
+                        reason=action_result.reason,
+                    )
+                )
+                if not action_result.accepted:
+                    continue
+
+                for event in action_result.emitted_events:
+                    precheck = validate_event_preconditions(candidate, event)
+                    if not precheck.valid:
+                        raise TransitionRejected(str(precheck.issues))
+                    candidate = apply_event(candidate, event)
+                    emitted_events.append(event)
+
+                inferred_events = self.mystery.infer_events(
+                    candidate,
+                    npc_id,
+                    turn_number,
+                )
+                for event in inferred_events:
+                    precheck = validate_event_preconditions(candidate, event)
+                    if not precheck.valid:
+                        raise TransitionRejected(str(precheck.issues))
+                    candidate = apply_event(candidate, event)
+                    emitted_events.append(event)
+
+                actions_executed += 1
+                involved_npc_ids.add(npc_id)
+
+        phase = NPCPhaseResult(
+            actions_attempted=actions_attempted,
+            actions_executed=actions_executed,
+            decisions=decisions,
+            emitted_events=emitted_events,
+            involved_npc_ids=involved_npc_ids,
+        )
+        if not emitted_events:
+            return phase, before
+
+        state_report = validate_state(candidate, previous=before)
+        if not state_report.valid:
+            raise TransitionRejected(str(state_report.issues))
+
+        narration = f"Autonomous NPC phase executed {actions_executed} action(s)."
+        turn = Turn(
+            session_id=session_id,
+            turn_number=candidate.turn_number,
+            raw_input="[npc-phase]",
+            accepted=True,
+            narration=narration,
+            location_id=candidate.player().state.current_location,
+            involved_entities=involved_npc_ids,
+            tags={"npc", "autonomous"},
+        )
+        self.store.commit_turn(session_id, candidate, emitted_events, turn, None)
+        return phase, candidate
 
     def replay_session(self, session_id: str) -> WorldState:
         return replay(self.store.load_initial_state(session_id), self.store.load_events(session_id))

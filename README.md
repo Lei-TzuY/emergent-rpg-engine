@@ -25,6 +25,7 @@ Key boundaries:
 - NPC knowledge is separate from objective truth and from player knowledge.
 - Every material change is a typed event that can be replayed.
 - Mystery deductions are replayable `FactInferred` events with rule/premise provenance.
+- NPC autonomy uses scoped planning contexts, bounded typed intents, and deterministic resolution before any state change.
 - Narrative providers cannot mutate canonical state.
 - Provider failure happens before the state/event transaction is committed.
 - Memory retrieval uses recent turns + ranked deterministic episodes + canonical facts, not the full transcript.
@@ -48,6 +49,7 @@ Useful commands:
 ```bash
 emergent-rpg status
 emergent-rpg history
+emergent-rpg npc-step --max-actions 3
 emergent-rpg play
 ```
 
@@ -100,6 +102,18 @@ The LLM action parser receives only the player's current interaction surface: cu
 
 If action parsing fails, the engine logs the provider failure and falls back to the deterministic command parser. If narrative generation fails, the accepted candidate state is **not committed**. In either case, a provider cannot directly mutate canonical state.
 
+## NPC autonomous planning
+
+Milestone 5 adds deterministic autonomous NPC execution without giving a planner mutation authority. NPCs can carry structured goals such as reaching a location or investigating an item. The planner receives only the NPC's own knowledge/social state plus local observations, emits a bounded typed intent, and the deterministic NPC resolver must accept it before normal validated events can change canonical state.
+
+Run one explicit autonomous phase with:
+
+```bash
+emergent-rpg npc-step --max-actions 3
+```
+
+The current demo lets Dax pursue a location goal and Lio investigate a locally visible clue. NPC-acquired knowledge remains private unless later transferred through ordinary game mechanics. Autonomous phases are persisted and replayable, but they do not yet auto-run between player turns; that scheduling/time-simulation layer is the next milestone.
+
 ## Demo world: Ashfall Relay
 
 Ashfall Relay is an original frontier mystery with six locations, five NPCs, two factions, eight items, and a chain of clues around a suspicious communications blackout. Different NPCs know different facts. Clues can have prerequisite gates, deterministic deductions can unlock derived facts with replayable provenance, and contradictory testimony remains scoped to the observer who actually learned it. Evidence can remain untouched for hundreds of turns and still be recovered because it lives in canonical state, not narration context.
@@ -116,7 +130,7 @@ CI runs all three checks on Python 3.12. Provider tests inject an in-memory tran
 
 ## Current limitations
 
-Autonomous NPC planning, world simulation between turns, vector retrieval, web APIs, web UI, richer combat/stat systems, provider routing, and cost controls are future work.
+Automatic world simulation between player turns, vector retrieval, web APIs, web UI, richer combat/stat systems, provider routing, and cost controls are future work.
 
 The OpenAI-compatible provider currently targets the common `/chat/completions` JSON shape and intentionally supports text responses only. Live endpoint interoperability depends on the selected server/model and is not claimed by offline CI.
 

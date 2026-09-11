@@ -70,6 +70,14 @@ The validator enforces the provenance boundary: a fact marked `discoverability="
 
 Contradictions are observer-scoped. `MysteryGraph.contradictions(state, observer_id)` compares only facts known by that player/NPC; learning a conflicting claim does not magically transfer either side of the contradiction to another observer. The current engine automatically evaluates derived knowledge for the player after accepted player turns.
 
+## NPC autonomous planning
+
+NPC autonomy is split into planning and execution so that intent generation cannot mutate canonical state. `build_npc_planning_context()` projects a deliberately scoped view containing only that NPC's configured structured goals, completed-goal set, own known facts/beliefs/relationships, current location, local exits, visible local NPCs/items, inventory, and blocking status. It does not expose player knowledge, another NPC's private knowledge, or the full world fact graph.
+
+`DeterministicNPCPlanner` emits a bounded `NPCPlan` of typed intents. Milestone 5 currently supports reach-location and investigate-item goals. `DeterministicNPCResolver` rechecks the evolving canonical candidate before producing `NPCMoved`, `FactDiscovered`, and `NPCGoalCompleted` events; the planner itself has no event/state write API.
+
+`GameEngine.run_npc_phase()` applies a global attempted-intent budget, validates/reduces each emitted event, evaluates mystery inference for the acting NPC using only that NPC's knowledge, validates the resulting world, and commits the whole autonomous phase atomically. A phase with no material events is not persisted. The debug/admin CLI exposes this explicitly as `emergent-rpg npc-step`; automatic scheduling between player turns is intentionally deferred to the world-simulation milestone.
+
 ## Memory
 
 Three tiers are present:

@@ -6,8 +6,8 @@ The project advances by coherent executable slices rather than placeholder subsy
 2. **Real LLM provider** — replaceable OpenAI-compatible narration, constrained `ScenePlan` input, offline transport tests, and provider-failure atomicity. **Complete.**
 3. **Structured LLM action parsing** — strict typed action JSON, visible-state-only prompt surface, deterministic fallback, and resolver-enforced legality. **Complete.**
 4. **Mystery graph** — deterministic clue dependencies, replayable inference provenance, observer-scoped contradictions, and discovery gates. **Complete.**
-5. **NPC autonomous planning** — goals, bounded plans, and knowledge-constrained action selection. **Next.**
-6. **World simulation between player turns** — scheduled events and off-screen consequences.
+5. **NPC autonomous planning** — structured goals, epistemically scoped planning contexts, bounded typed intents, deterministic NPC resolution, and replayable goal progress. **Complete.**
+6. **World simulation between player turns** — scheduled NPC phases, time-aware off-screen consequences, and deterministic simulation cadence. **Next.**
 7. **Vector/embedding retrieval** — optional semantic retrieval alongside deterministic ranking.
 8. **Local-model support / Ollama** — explicit local-model presets/routing beyond the generic OpenAI-compatible endpoint.
 9. **Web API** — stable service boundary over the core engine.
@@ -44,6 +44,21 @@ known canonical facts
 
 Derived facts cannot be injected as ordinary `FactDiscovered` events. Inference events must match a registered rule exactly, the observer must already know every premise, and the conclusion must be marked `discoverability="inferred"`. Contradictions are computed from each observer's own knowledge set, so player/NPC epistemic boundaries remain intact.
 
-## Promotion gate for Milestone 5
+## Milestone 5 invariant
 
-NPC planning must consume only that NPC's canonical knowledge, goals, local state, and permitted world observations. Plans must be bounded and propose ordinary typed actions/events through deterministic legality checks; an NPC planner must never mutate canonical state directly or gain player/other-NPC knowledge implicitly.
+NPC planning is an intent layer, never a mutation layer:
+
+```text
+NPC structured goals + own knowledge + local observations
+→ bounded NPCPlanningContext
+→ typed NPCPlan / NPCIntent
+→ deterministic NPC resolver
+→ ordinary validated domain events
+→ persistence / replay
+```
+
+The planner never receives the full `WorldState`. Its context contains only the NPC's own known facts/beliefs/relationships, configured goals, current location, local exits, visible NPCs/items, inventory, and blocking status. A global `max_actions` budget counts attempted intents, not only successful actions. Goal completion is canonical and replayable through `NPCGoalCompleted`, while movement and discovered facts still pass the normal validator/reducer path.
+
+## Promotion gate for Milestone 6
+
+World simulation must decide *when* autonomous phases occur without weakening the Milestone 5 authority boundary. Scheduling, off-screen time advancement, and consequences must be deterministic/replayable; simulation may invoke NPC planning/resolution but must not let schedulers or planners mutate canonical state directly.

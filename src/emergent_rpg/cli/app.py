@@ -105,6 +105,25 @@ def history(
         typer.echo(f"  {turn.narration}")
 
 
+@app.command("npc-step")
+def npc_step(
+    session_id: Annotated[str | None, typer.Argument()] = None,
+    db: Annotated[Path, DB_OPTION] = DEFAULT_DB,
+    max_actions: Annotated[int, typer.Option(min=1, max=20)] = 3,
+) -> None:
+    engine = _engine(db)
+    resolved = _resolve_session(engine.store, session_id)
+    phase, state = engine.run_npc_phase(resolved, max_actions=max_actions)
+    typer.echo(
+        f"NPC phase: {phase.actions_executed} action(s), "
+        f"{len(phase.emitted_events)} event(s)."
+    )
+    for decision in phase.decisions:
+        marker = "OK" if decision.accepted else "REJECTED"
+        typer.echo(f"  [{marker}] {decision.npc_id}: {decision.intent.kind}")
+    typer.echo(_render_state(state))
+
+
 @app.command()
 def play(
     session_id: Annotated[str | None, typer.Argument()] = None,
