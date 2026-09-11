@@ -15,3 +15,7 @@ class ProviderRequestError(ProviderError):
 
 class ProviderResponseError(ProviderError):
     """Raised when a provider returns an unusable response."""
+
+
+class ProviderBudgetExceeded(ProviderError):
+    """Raised before a provider call that would exceed a configured runtime budget."""

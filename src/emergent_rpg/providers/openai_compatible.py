@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Mapping
 from typing import Protocol, cast
@@ -12,6 +13,7 @@ from emergent_rpg.domain.actions import PlayerAction, parse_action
 from emergent_rpg.domain.models import NPC, WorldState
 from emergent_rpg.engine.narrative import ScenePlan
 from emergent_rpg.providers.base import ActionParser, NarrativeGenerator
+from emergent_rpg.providers.control import ProviderRuntimeControls, ProviderStage
 from emergent_rpg.providers.errors import ProviderRequestError, ProviderResponseError
 
 MAX_RESPONSE_BYTES = 1_000_000
@@ -98,18 +100,38 @@ class OpenAICompatibleClient:
         self,
         config: OpenAICompatibleConfig,
         transport: JsonTransport | None = None,
+        controls: ProviderRuntimeControls | None = None,
     ) -> None:
         self.config = config
         self.transport = transport or UrllibJsonTransport()
+        self.controls = controls
 
     def complete(
         self,
         system_prompt: str,
         user_payload: Mapping[str, object],
         *,
+        stage: ProviderStage,
         temperature: float | None = None,
         max_tokens: int | None = None,
     ) -> str:
+        effective_temperature = self.config.temperature if temperature is None else temperature
+        effective_max_tokens = self.config.max_tokens if max_tokens is None else max_tokens
+        cache_key: str | None = None
+        if self.controls is not None:
+            cache_key = self.controls.cache_key(
+                stage=stage,
+                provider_identity=self._cache_identity(),
+                system_prompt=system_prompt,
+                user_payload=user_payload,
+                temperature=effective_temperature,
+                max_tokens=effective_max_tokens,
+            )
+            cached = self.controls.cache.get(cache_key)
+            if cached is not None:
+                return cached
+            self.controls.ledger.reserve(stage, effective_max_tokens)
+
         response = self.transport.post_json(
             f"{self.config.base_url}/chat/completions",
             self._headers(),
@@ -122,12 +144,25 @@ class OpenAICompatibleClient:
                         "content": json.dumps(user_payload, ensure_ascii=False, sort_keys=True),
                     },
                 ],
-                "temperature": self.config.temperature if temperature is None else temperature,
-                "max_tokens": self.config.max_tokens if max_tokens is None else max_tokens,
+                "temperature": effective_temperature,
+                "max_tokens": effective_max_tokens,
             },
             self.config.timeout_seconds,
         )
-        return _extract_message_text(response)
+        text = _extract_message_text(response)
+        if self.controls is not None and cache_key is not None:
+            self.controls.cache.put(cache_key, text)
+        return text
+
+    def _cache_identity(self) -> dict[str, object]:
+        credential_scope = None
+        if self.config.api_key:
+            credential_scope = hashlib.sha256(self.config.api_key.encode("utf-8")).hexdigest()
+        return {
+            "base_url": self.config.base_url,
+            "model": self.config.model,
+            "credential_scope": credential_scope,
+        }
 
     def _headers(self) -> dict[str, str]:
         headers = {
@@ -145,8 +180,9 @@ class OpenAICompatibleNarrativeGenerator(NarrativeGenerator):
         self,
         config: OpenAICompatibleConfig,
         transport: JsonTransport | None = None,
+        controls: ProviderRuntimeControls | None = None,
     ) -> None:
-        self.client = OpenAICompatibleClient(config, transport)
+        self.client = OpenAICompatibleClient(config, transport, controls)
         self.config = config
 
     def generate(self, scene_plan: ScenePlan) -> str:
@@ -159,7 +195,11 @@ class OpenAICompatibleNarrativeGenerator(NarrativeGenerator):
             "observations": scene_plan.observations,
             "suggested_dramatic_beat": scene_plan.suggested_dramatic_beat,
         }
-        return self.client.complete(NARRATION_SYSTEM_PROMPT, provider_scene)
+        return self.client.complete(
+            NARRATION_SYSTEM_PROMPT,
+            provider_scene,
+            stage=ProviderStage.NARRATION,
+        )
 
 
 class OpenAICompatibleActionParser(ActionParser):
@@ -167,8 +207,9 @@ class OpenAICompatibleActionParser(ActionParser):
         self,
         config: OpenAICompatibleConfig,
         transport: JsonTransport | None = None,
+        controls: ProviderRuntimeControls | None = None,
     ) -> None:
-        self.client = OpenAICompatibleClient(config, transport)
+        self.client = OpenAICompatibleClient(config, transport, controls)
 
     def parse(self, text: str, state: WorldState) -> PlayerAction:
         content = self.client.complete(
@@ -177,6 +218,7 @@ class OpenAICompatibleActionParser(ActionParser):
                 "player_text": text,
                 "visible_state": _visible_action_surface(state),
             },
+            stage=ProviderStage.ACTION_PARSER,
             temperature=0.0,
             max_tokens=200,
         )
