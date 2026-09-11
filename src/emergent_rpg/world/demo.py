@@ -12,6 +12,7 @@ from emergent_rpg.domain.models import (
     NPCKnowledge,
     PlayerCharacter,
     ScheduledLocationCondition,
+    TraversalEffect,
     TruthStatus,
     WorldState,
 )
@@ -364,6 +365,7 @@ def build_demo_world() -> WorldState:
                         "A dense ash squall sweeps across the yard, reducing visibility and "
                         "turning the black grit into a stinging horizontal sheet."
                     ),
+                    traversal=TraversalEffect(extra_minutes=5),
                 ),
             )
         ],
