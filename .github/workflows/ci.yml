@@ -39,3 +39,29 @@ jobs:
       - run: ruff check .
       - run: mypy src/emergent_rpg
       - run: pytest
+      - name: Run 1000-turn consistency evaluation
+        run: |
+          emergent-rpg-eval \
+            --db /tmp/emergent-eval.db \
+            --turns 1000 \
+            --seed 20260911 \
+            --checkpoint-interval 100 \
+            --output /tmp/emergent-eval.json
+      - name: Verify evaluation report
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("/tmp/emergent-eval.json").read_text(encoding="utf-8"))
+          assert report["passed"] is True, report["failures"]
+          assert report["accepted_turns"] == 1000
+          assert report["target_accepted_turns"] == 1000
+          assert report["rejected_actions"] > 0
+          assert report["checkpoint_turns"][-1] == 1000
+          assert report["replay_equal"] is True
+          assert report["state_valid"] is True
+          assert report["event_log_monotonic"] is True
+          assert report["unique_event_ids"] is True
+          print("verified deterministic 1000-turn consistency report")
+          PY
