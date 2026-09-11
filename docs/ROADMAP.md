@@ -9,8 +9,8 @@ The project advances by coherent executable slices rather than placeholder subsy
 5. **NPC autonomous planning** — structured goals, epistemically scoped planning contexts, bounded typed intents, deterministic NPC resolution, and replayable goal progress. **Complete.**
 6. **World simulation between player turns** — canonical simulation cursor, replayable cadence markers, bounded catch-up, and time-aware off-screen NPC consequences. **Complete.**
 7. **Vector/embedding retrieval** — optional vector cosine reranking over persisted episodes, deterministic fallback, malformed-output rejection, and no truth authority. **Complete.**
-8. **Local-model support / Ollama** — explicit local-model presets/routing beyond the generic OpenAI-compatible endpoint. **Next.**
-9. **Web API** — stable service boundary over the core engine.
+8. **Local-model support / Ollama** — explicit Ollama narration/action-parser presets, local defaults, namespaced configuration, and offline transport tests. **Complete.**
+9. **Web API** — stable service boundary over the core engine. **Next.**
 10. **Web UI** — presentation layer over persisted sessions.
 11. **Model routing / cost controls** — per-stage provider selection, budgets, and caching.
 12. **Evaluation harness for 1,000+ turn consistency** — repeatable long-run continuity metrics and adversarial scenarios.
@@ -90,6 +90,21 @@ persisted candidate episodes
 
 The embedding backend cannot return episode IDs or facts, so it cannot inject new memory objects. Canonical semantic facts remain sourced only from the observer's already-known fact IDs. Wrong vector counts, inconsistent dimensions, non-finite values, and backend exceptions discard semantic enrichment and fall back to deterministic ranking. The built-in feature-hashing backend is deterministic, dependency-free, and keeps CI offline.
 
-## Promotion gate for Milestone 8
+## Milestone 8 invariant
 
-Local-model support must make Ollama/local OpenAI-compatible usage explicit without weakening provider boundaries or embedding credentials/configuration into canonical state. Local presets must remain replaceable, action parsing and narration must keep their existing authority limits, and CI must validate configuration/transport behavior without requiring a live Ollama daemon.
+Local-model support is a configuration/routing preset, not a new authority path:
+
+```text
+provider/parser name = ollama
+→ namespaced Ollama configuration
+→ default http://127.0.0.1:11434/v1
+→ existing OpenAICompatibleClient transport
+→ existing narration or action-parser boundary
+→ deterministic resolver / transactional engine unchanged
+```
+
+`EMERGENT_RPG_OLLAMA_MODEL` is explicit and required; base URL, proxy API key, timeout, temperature, and token budget have separate `EMERGENT_RPG_OLLAMA_*` controls. The preset does not inherit generic `EMERGENT_RPG_LLM_API_KEY`, preventing accidental credential bleed into a local endpoint. CI uses injected fake transport and never requires a live Ollama daemon.
+
+## Promotion gate for Milestone 9
+
+The Web API must be a thin service boundary over `GameEngine`, not a second game engine. HTTP handlers may validate/serialize requests, select an existing provider/parser mode, and expose persisted session/state/history operations, but all state transitions must continue through the same resolver/event/validator/persistence pipeline. API tests must run in-process/offline and prove malformed requests or provider failures cannot partially mutate a session.
