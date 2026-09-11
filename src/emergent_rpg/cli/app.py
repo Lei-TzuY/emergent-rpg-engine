@@ -8,14 +8,24 @@ import typer
 from emergent_rpg.domain.models import NPC, WorldState
 from emergent_rpg.engine.service import GameEngine
 from emergent_rpg.persistence.db import SQLiteStore
+from emergent_rpg.providers.errors import ProviderError
+from emergent_rpg.providers.factory import NarrativeProviderName, build_narrative_generator
 
-app = typer.Typer(help="Persistent deterministic text-RPG engine demo.")
+app = typer.Typer(help="Persistent canonical-state text-RPG engine demo.")
 DEFAULT_DB = Path("emergent-rpg.db")
 DB_OPTION = typer.Option("--db", help="SQLite database path.")
+PROVIDER_OPTION = typer.Option(
+    "--provider",
+    help="Narrative provider: scripted or openai-compatible.",
+)
 
 
-def _engine(db: Path) -> GameEngine:
-    return GameEngine(SQLiteStore(db))
+def _engine(
+    db: Path,
+    provider: NarrativeProviderName = NarrativeProviderName.SCRIPTED,
+) -> GameEngine:
+    generator = build_narrative_generator(provider)
+    return GameEngine(SQLiteStore(db), generator=generator)
 
 
 def _resolve_session(store: SQLiteStore, session_id: str | None) -> str:
@@ -88,10 +98,17 @@ def history(
 def play(
     session_id: Annotated[str | None, typer.Argument()] = None,
     db: Annotated[Path, DB_OPTION] = DEFAULT_DB,
+    provider: Annotated[NarrativeProviderName, PROVIDER_OPTION] = NarrativeProviderName.SCRIPTED,
 ) -> None:
-    engine = _engine(db)
+    try:
+        engine = _engine(db, provider)
+    except ProviderError as exc:
+        raise typer.BadParameter(str(exc), param_hint="--provider") from exc
+
     resolved = _resolve_session(engine.store, session_id)
-    typer.echo("Ashfall Relay — type `help` for commands, `quit` to exit.")
+    typer.echo(
+        f"Ashfall Relay — provider={provider.value}; type `help` for commands, `quit` to exit."
+    )
     typer.echo(_render_state(engine.store.load_state(resolved)))
     while True:
         try:
@@ -108,7 +125,11 @@ def play(
                 "take <item>, wait [minutes]"
             )
             continue
-        result, narration, state = engine.process_text(resolved, text)
+        try:
+            result, narration, state = engine.process_text(resolved, text)
+        except ProviderError as exc:
+            typer.echo(f"Narrative provider failed; turn was not committed: {exc}", err=True)
+            continue
         typer.echo(narration)
         if result.accepted:
             typer.echo(_render_state(state))

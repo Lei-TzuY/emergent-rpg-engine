@@ -12,6 +12,7 @@ from emergent_rpg.domain.actions import (
     WaitAction,
 )
 from emergent_rpg.domain.models import WorldState
+from emergent_rpg.engine.narrative import ScenePlan
 from emergent_rpg.providers.base import ActionParser, MemorySummarizer, NarrativeGenerator
 
 
@@ -54,11 +55,7 @@ class StubActionParser(ActionParser):
 
 
 class ScriptedNarrativeGenerator(NarrativeGenerator):
-    def generate(self, scene_plan: object) -> str:
-        from emergent_rpg.engine.narrative import ScenePlan
-
-        if not isinstance(scene_plan, ScenePlan):
-            raise TypeError("ScriptedNarrativeGenerator requires ScenePlan")
+    def generate(self, scene_plan: ScenePlan) -> str:
         if scene_plan.observations:
             return " ".join(scene_plan.observations)
         return "Nothing changes, but the moment passes."

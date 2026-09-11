@@ -25,8 +25,9 @@ Key boundaries:
 - NPC knowledge is separate from objective truth and from player knowledge.
 - Every material change is a typed event that can be replayed.
 - Narrative providers cannot mutate canonical state.
-- LLM-facing interfaces are replaceable; the deterministic demo and all tests require no API key or network.
+- Provider failure happens before the state/event transaction is committed.
 - Memory retrieval uses recent turns + ranked deterministic episodes + canonical facts, not the full transcript.
+- All tests remain offline; no API key or network is required for CI.
 
 ## Quick start
 
@@ -63,6 +64,31 @@ Inside the demo:
 
 Sessions persist in `emergent-rpg.db` by default. Pass `--db PATH` to use another SQLite database.
 
+## Real narrative provider
+
+The default `scripted` provider is deterministic and offline. A real OpenAI-compatible Chat Completions endpoint can be selected without changing domain or engine code:
+
+```bash
+export EMERGENT_RPG_LLM_BASE_URL="http://127.0.0.1:11434/v1"
+export EMERGENT_RPG_LLM_MODEL="your-model"
+# Optional for endpoints that require authentication:
+export EMERGENT_RPG_LLM_API_KEY="..."
+
+emergent-rpg play --provider openai-compatible
+```
+
+Optional controls:
+
+```text
+EMERGENT_RPG_LLM_TIMEOUT       default 30 seconds
+EMERGENT_RPG_LLM_TEMPERATURE   default 0.7
+EMERGENT_RPG_LLM_MAX_TOKENS    default 500
+```
+
+Provider credentials are read from the environment rather than command-line flags. The provider receives a constrained `ScenePlan`, not mutable canonical state. Facts known only by an NPC are not automatically made available to player-facing narration.
+
+If an external provider request fails or returns malformed output, the accepted candidate state is **not committed**. The player can retry without a half-applied event stream.
+
 ## Demo world: Ashfall Relay
 
 Ashfall Relay is an original frontier mystery with six locations, five NPCs, two factions, eight items, and a chain of clues around a suspicious communications blackout. Different NPCs know different facts. Evidence can remain untouched for hundreds of turns and still be recovered because it lives in canonical state, not narration context.
@@ -75,10 +101,12 @@ mypy src/emergent_rpg
 pytest
 ```
 
-CI runs all three checks on Python 3.12.
+CI runs all three checks on Python 3.12. Provider tests inject an in-memory transport and never contact an external service.
 
 ## Current limitations
 
-This first vertical slice deliberately keeps the surface small. Freeform natural-language action parsing is only an interface/fallback; autonomous NPC planning, real LLM providers, vector retrieval, web APIs, web UI, richer combat/stat systems, and world simulation between turns are future work.
+Freeform natural-language action parsing is still deterministic/fallback-only. Structured LLM action parsing, autonomous NPC planning, world simulation between turns, vector retrieval, web APIs, web UI, richer combat/stat systems, provider routing, and cost controls are future work.
+
+The OpenAI-compatible provider currently targets the common `/chat/completions` JSON shape and intentionally supports text responses only. Live endpoint interoperability depends on the selected server/model and is not claimed by offline CI.
 
 There is intentionally no `LICENSE` file yet: the repository did not state a license intent, so this implementation does not guess one on the owner's behalf.

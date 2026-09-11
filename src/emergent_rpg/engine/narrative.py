@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 
 from emergent_rpg.domain.actions import PlayerAction
 from emergent_rpg.domain.events import FactDiscovered
-from emergent_rpg.domain.models import NPC, WorldState
+from emergent_rpg.domain.models import WorldState
 from emergent_rpg.engine.resolver import ActionResult
 from emergent_rpg.validation.models import ValidationReport
 from emergent_rpg.validation.validator import validate_scene_participation
@@ -30,13 +30,17 @@ class DeterministicNarrativePlanner:
         action: PlayerAction,
         result: ActionResult,
     ) -> ScenePlan:
+        del state_before
         participants = sorted(result.involved_entities)
         fact_reveals: dict[str, list[str]] = {}
-        allowed: set[str] = set(state_after.player_known_facts)
-        for entity_id in participants:
-            entity = state_after.entities.get(entity_id)
-            if isinstance(entity, NPC):
-                allowed.update(entity.knowledge.facts_known)
+
+        # Player-facing narration may only contain facts the player actually knows after
+        # accepted events. Merely placing a knowledgeable NPC in the scene is not a transfer
+        # of knowledge.
+        allowed_ids = set(state_after.player_known_facts)
+        allowed_propositions = [
+            state_after.facts[fact_id].proposition for fact_id in sorted(allowed_ids)
+        ]
 
         discovered = [
             event.fact_id
@@ -44,17 +48,15 @@ class DeterministicNarrativePlanner:
             if isinstance(event, FactDiscovered) and event.observer_id == state_after.player_id
         ]
         if discovered:
-            # Facts newly learned by the player were supported by resolver observations/events,
-            # not invented by narration.
             fact_reveals[state_after.player_id] = discovered
 
-        forbidden = sorted(set(state_after.facts) - allowed)
+        forbidden = sorted(set(state_after.facts) - allowed_ids)
         return ScenePlan(
             objective=f"Resolve {action.kind} without inventing state changes",
             participating_entities=participants,
-            relevant_facts=sorted(allowed),
+            relevant_facts=allowed_propositions,
             events_that_occurred=[event.type for event in result.emitted_events],
-            information_allowed_to_be_revealed=sorted(allowed),
+            information_allowed_to_be_revealed=allowed_propositions,
             information_forbidden_to_reveal=forbidden,
             observations=result.observations,
             fact_reveals=fact_reveals,

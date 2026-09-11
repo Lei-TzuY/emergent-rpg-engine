@@ -10,6 +10,7 @@ from emergent_rpg.engine.reducer import apply_event, replay
 from emergent_rpg.engine.resolver import ActionResult, DeterministicResolver
 from emergent_rpg.memory.models import Episode
 from emergent_rpg.persistence.db import SQLiteStore
+from emergent_rpg.providers.base import NarrativeGenerator
 from emergent_rpg.providers.scripted import DeterministicActionParser, ScriptedNarrativeGenerator
 from emergent_rpg.validation.validator import validate_event_preconditions, validate_state
 from emergent_rpg.world.demo import build_demo_world
@@ -20,12 +21,16 @@ class TransitionRejected(RuntimeError):
 
 
 class GameEngine:
-    def __init__(self, store: SQLiteStore) -> None:
+    def __init__(
+        self,
+        store: SQLiteStore,
+        generator: NarrativeGenerator | None = None,
+    ) -> None:
         self.store = store
         self.parser = DeterministicActionParser()
         self.resolver = DeterministicResolver()
         self.planner = DeterministicNarrativePlanner()
-        self.generator = ScriptedNarrativeGenerator()
+        self.generator = generator or ScriptedNarrativeGenerator()
 
     def new_session(self, name: str = "Ashfall Relay") -> GameSession:
         session = GameSession(
@@ -80,6 +85,9 @@ class GameEngine:
         scene_report = self.planner.validate(candidate, plan)
         if not scene_report.valid:
             raise TransitionRejected(str(scene_report.issues))
+
+        # Narrative generation happens before the transactional commit. A provider outage can
+        # therefore fail the turn without leaving canonical state or the event log half-applied.
         narration = self.generator.generate(plan)
 
         location_id = candidate.player().state.current_location
