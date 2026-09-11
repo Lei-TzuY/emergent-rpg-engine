@@ -13,7 +13,8 @@ The project advances by coherent executable slices rather than placeholder subsy
 9. **Web API** — thin FastAPI boundary over `GameEngine`, player-visible state projection, persisted session/history/action endpoints, and HTTP failure atomicity. **Complete.**
 10. **Web UI** — same-origin API-backed browser client with session lifecycle, player-visible state/history rendering, action submission, explicit loading/error states, and packaged static assets. **Complete.**
 11. **Model routing / cost controls** — per-stage provider/model configuration, finite request/reserved-token budgets, bounded completion caching, and failure atomicity. **Complete.**
-12. **Evaluation harness for 1,000+ turn consistency** — repeatable long-run continuity metrics and adversarial scenarios. **Next.**
+12. **Evaluation harness for 1,000+ turn consistency** — deterministic seeded/adversarial workload, periodic replay/invariant checkpoints, machine-readable reports, and a real 1,000-accepted-turn CI gate. **Complete.**
+13. **Scheduled world events / environmental simulation** — canonical future-event scheduling, replayable due-event execution, bounded catch-up, and deterministic non-NPC world consequences. **Next.**
 
 ## Milestone 3 invariant
 
@@ -157,6 +158,24 @@ Budgets count attempted external requests and reserved output-token ceilings, no
 
 Budget/cache metadata is not canonical state and is never persisted as world truth. Offline tests prove route selection, budget accounting, cache isolation, LRU bounds, parser fallback, and transaction atomicity.
 
-## Promotion gate for Milestone 12
+## Milestone 12 invariant
 
-The long-run evaluation harness must measure deterministic continuity properties rather than manufacture a score from CI runtime. It should execute repeatable seeded/adversarial scenarios for at least 1,000 turns, validate replay equality and invariant preservation throughout, report machine-readable metrics/failures, and distinguish engine correctness from provider-quality observations. Any performance metric must come from an explicit controlled benchmark configuration rather than ordinary CI timing.
+Long-run evaluation measures deterministic continuity properties, not CI speed:
+
+```text
+fixed seed + mixed legal/adversarial action policy
+→ ordinary GameEngine execution path
+→ accepted canonical turns + explicit rejected submissions
+→ periodic persisted-state validation and event replay
+→ machine-readable correctness report
+```
+
+The harness targets accepted canonical turns rather than merely looping a command. Its seeded scenario mixes valid movement, inspection, item acquisition, and waits with deterministic impossible moves and missing-item attempts. Rejected actions must leave canonical state unchanged while remaining visible in turn history.
+
+At checkpoints, the evaluator independently reloads persisted data and verifies state validity, replay equality, append-only event growth, unique event IDs, item ownership consistency, monotonic world time, and monotonic player knowledge. Final persisted turn and episode counts must match submitted and accepted actions respectively. CI executes a real 1,000-accepted-turn scenario and parses its JSON report rather than trusting process exit alone.
+
+The first complete candidate with seed `20260911` produced 1,058 submitted actions, 1,000 accepted turns, 58 deterministic rejections, 2,268 events, and 1,000 episodes, with checkpoints through turn 1,000, all tracked invariants true, `failures=[]`, and `passed=true`. This is correctness evidence for that deterministic scenario, not a performance, throughput, model-quality, or billing claim.
+
+## Promotion gate for Milestone 13
+
+Scheduled environmental events must be canonical and replayable rather than hidden timers. Future-event definitions or queue entries must live in authoritative state, become due from the world clock rather than wall-clock time, emit ordinary validated typed events, and advance/remove their schedule through replayable state transitions. Processing must be deterministic and bounded when a large player time jump makes many events due. Non-NPC consequences must integrate with the same atomic player-turn transaction and must not leak hidden future-event metadata into player-facing memory/history before the event becomes observable. Tests must prove due-time ordering, bounded catch-up, replay equality, restart persistence, and rejection of out-of-order or duplicate schedule execution.
