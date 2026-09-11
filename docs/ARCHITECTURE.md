@@ -7,15 +7,16 @@ Action
 → Resolution
 → Events
 → Validation
-→ State
+→ Candidate State
 → Retrieval
 → ScenePlan
-→ Narration
+→ Narrative Provider
+→ Atomic Commit
 ```
 
 ### 1. Action
 
-`ActionParser` converts input into a structured action (`move`, `inspect`, `talk`, `take`, `wait`, or freeform fallback). The demo uses `DeterministicActionParser`; an LLM parser can later implement the same interface.
+`ActionParser` converts input into a structured action (`move`, `inspect`, `talk`, `take`, `wait`, or freeform fallback). The demo currently uses `DeterministicActionParser`; structured LLM parsing is a later milestone.
 
 ### 2. Resolution
 
@@ -25,9 +26,11 @@ Action
 
 Accepted material changes become typed domain events such as `PlayerMoved`, `ItemAcquired`, `FactDiscovered`, `NPCLearnedFact`, `RelationshipChanged`, and `TimeAdvanced`. Events are append-only in SQLite.
 
-### 4. Validation
+### 4. Validation and candidate state
 
-Each event is prechecked, then reduced into a candidate state. The candidate is validated before persistence. Validators detect missing references, invalid locations, ownership disagreement, duplicate unique items, unknown-fact disclosure, resurrection, and backward time/turn movement.
+Each event is prechecked, then reduced into an in-memory candidate state. The candidate is validated before persistence. Validators detect missing references, invalid locations, ownership disagreement, duplicate unique items, unknown-fact disclosure, resurrection, and backward time/turn movement.
+
+The persisted `WorldState` is not changed during this stage.
 
 ### 5. Canonical state
 
@@ -47,9 +50,15 @@ Each `NPC` owns `NPCKnowledge`. A fact existing globally does not imply that an 
 
 Player-discovered facts live separately in `WorldState.player_known_facts`, normally added by `FactDiscovered`.
 
+### Narrative permission
+
+Player-facing narration may use only facts in `player_known_facts` after the accepted events have been applied to the candidate state. Merely placing an NPC in a scene does **not** grant the player that NPC's private knowledge.
+
+`ScenePlan.information_forbidden_to_reveal` carries fact IDs, not hidden propositions, so an external provider does not need secret content merely to know that it must not invent or disclose it.
+
 ### Narrative text
 
-Narration is non-authoritative. `ScenePlan` lists only events/observations that actually occurred plus allowed/forbidden information. `NarrativeGenerator` receives the plan but has no state mutation API.
+Narration is non-authoritative. `ScenePlan` lists only accepted events, resolver observations, allowed information, and continuity constraints. `NarrativeGenerator` receives the plan but has no state mutation API.
 
 ## Memory
 
@@ -83,4 +92,30 @@ The provider layer defines replaceable interfaces for:
 - `NarrativeGenerator`
 - `MemorySummarizer`
 
-The built-in scripted/deterministic implementations keep tests and the demo fully offline.
+Two narrative generators currently exist:
+
+- `ScriptedNarrativeGenerator` — deterministic, offline, used by default and by long-run tests.
+- `OpenAICompatibleNarrativeGenerator` — sends a constrained `ScenePlan` to a configurable `/chat/completions` endpoint through a small injectable JSON transport.
+
+The provider implementation lives entirely outside domain models, resolution, reducers, validators, and persistence.
+
+### Failure atomicity
+
+The engine order is intentionally:
+
+```text
+resolve
+→ reduce into candidate
+→ validate candidate
+→ build + validate ScenePlan
+→ generate narration
+→ commit events + state + turn + episode
+```
+
+If the external provider times out, rejects the request, or returns malformed JSON, narration raises a typed `ProviderError` before `SQLiteStore.commit_turn()` is reached. The previous canonical state and append-only event log remain unchanged. Integration tests prove this property.
+
+### Transport and secrets
+
+The production transport uses the Python standard library (`urllib`) and enforces a bounded response size. Tests inject a fake transport, so CI never requires network access.
+
+Provider credentials come from environment variables and are only used to build the HTTP `Authorization` header. They are not persisted in game state, event payloads, turns, episodes, or repository files.
