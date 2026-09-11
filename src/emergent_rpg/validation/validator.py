@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from collections import Counter
 
-from emergent_rpg.domain.events import CharacterHealed, Event, PlayerMoved, TimeAdvanced
+from emergent_rpg.domain.events import (
+    CharacterHealed,
+    Event,
+    FactDiscovered,
+    FactInferred,
+    PlayerMoved,
+    TimeAdvanced,
+)
 from emergent_rpg.domain.models import NPC, WorldState
 from emergent_rpg.validation.models import ValidationReport
 
@@ -51,6 +58,45 @@ def validate_state(state: WorldState, previous: WorldState | None = None) -> Val
                 f"unique item {item_id} appears in multiple inventories",
             )
 
+    for fact_id, fact in state.facts.items():
+        missing_prerequisites = fact.discovery_prerequisites - state.facts.keys()
+        if missing_prerequisites:
+            report.add_error(
+                "invalid_mystery_graph",
+                f"{fact_id} has missing prerequisites: {sorted(missing_prerequisites)}",
+            )
+        missing_contradictions = fact.contradicts - state.facts.keys()
+        if missing_contradictions:
+            report.add_error(
+                "invalid_mystery_graph",
+                f"{fact_id} contradicts missing facts: {sorted(missing_contradictions)}",
+            )
+        if fact_id in fact.discovery_prerequisites or fact_id in fact.contradicts:
+            report.add_error(
+                "invalid_mystery_graph",
+                f"{fact_id} cannot depend on or contradict itself",
+            )
+
+    for rule_id, rule in state.inference_rules.items():
+        if rule.id != rule_id:
+            report.add_error("invalid_mystery_graph", f"rule key/id mismatch for {rule_id}")
+        missing_premises = rule.premises - state.facts.keys()
+        if missing_premises or rule.conclusion not in state.facts:
+            report.add_error(
+                "invalid_mystery_graph",
+                f"rule {rule_id} references missing facts",
+            )
+        elif state.facts[rule.conclusion].discoverability != "inferred":
+            report.add_error(
+                "invalid_mystery_graph",
+                f"rule {rule_id} conclusion must be marked inferred",
+            )
+        if rule.conclusion in rule.premises:
+            report.add_error(
+                "invalid_mystery_graph",
+                f"rule {rule_id} conclusion cannot be one of its premises",
+            )
+
     for entity_id, entity in state.entities.items():
         if isinstance(entity, NPC):
             missing = entity.knowledge.facts_known - state.facts.keys()
@@ -95,9 +141,89 @@ def validate_event_preconditions(state: WorldState, event: Event) -> ValidationR
             report.add_error("nonexistent_entity", f"missing heal target {event.entity_id}")
         elif not state.entities[event.entity_id].state.alive:
             report.add_error("impossible_resurrection", "cannot heal a dead character back to life")
+    elif isinstance(event, FactDiscovered):
+        _validate_discovery_event(state, event, report)
+    elif isinstance(event, FactInferred):
+        _validate_inference_event(state, event, report)
     elif isinstance(event, TimeAdvanced) and event.minutes <= 0:
         report.add_error("time_went_backward", "time advance must be positive")
     return report
+
+
+def _known_facts_for_observer(
+    state: WorldState,
+    observer_id: str,
+    report: ValidationReport,
+) -> set[str] | None:
+    if observer_id == state.player_id:
+        return state.player_known_facts
+    observer = state.entities.get(observer_id)
+    if not isinstance(observer, NPC):
+        report.add_error("nonexistent_entity", f"missing fact observer {observer_id}")
+        return None
+    return observer.knowledge.facts_known
+
+
+def _validate_discovery_event(
+    state: WorldState,
+    event: FactDiscovered,
+    report: ValidationReport,
+) -> None:
+    fact = state.facts.get(event.fact_id)
+    if fact is None:
+        report.add_error("nonexistent_entity", f"missing discovered fact {event.fact_id}")
+        return
+    known = _known_facts_for_observer(state, event.observer_id, report)
+    if known is None:
+        return
+    if fact.discoverability == "inferred":
+        report.add_error(
+            "invalid_discovery",
+            f"fact {event.fact_id} requires inference provenance",
+        )
+    missing = fact.discovery_prerequisites - known
+    if missing:
+        report.add_error(
+            "invalid_discovery",
+            f"observer lacks discovery prerequisites: {sorted(missing)}",
+        )
+
+
+def _validate_inference_event(
+    state: WorldState,
+    event: FactInferred,
+    report: ValidationReport,
+) -> None:
+    rule = state.inference_rules.get(event.rule_id)
+    if rule is None:
+        report.add_error("invalid_inference", f"missing inference rule {event.rule_id}")
+        return
+    if rule.conclusion != event.fact_id:
+        report.add_error("invalid_inference", "inference conclusion does not match rule")
+    if set(event.premise_fact_ids) != rule.premises:
+        report.add_error("invalid_inference", "inference provenance does not match rule premises")
+
+    fact = state.facts.get(event.fact_id)
+    if fact is None:
+        report.add_error("nonexistent_entity", f"missing inferred fact {event.fact_id}")
+        return
+    if fact.discoverability != "inferred":
+        report.add_error(
+            "invalid_inference",
+            f"fact {event.fact_id} is not marked as inferred",
+        )
+
+    known = _known_facts_for_observer(state, event.observer_id, report)
+    if known is None:
+        return
+    missing = rule.premises - known
+    if missing:
+        report.add_error(
+            "invalid_inference",
+            f"observer lacks inference premises: {sorted(missing)}",
+        )
+    if event.fact_id in known:
+        report.add_error("invalid_inference", f"fact {event.fact_id} is already known")
 
 
 def validate_scene_participation(

@@ -20,6 +20,7 @@ from emergent_rpg.domain.events import (
     TimeAdvanced,
 )
 from emergent_rpg.domain.models import NPC, Fact, Item, WorldState
+from emergent_rpg.engine.mystery import MysteryGraph
 
 
 class ActionResult(BaseModel):
@@ -75,7 +76,11 @@ class DeterministicResolver:
                 TimeAdvanced(turn_number=turn, minutes=1),
             ]
             observations = [f"You take {item.name}."]
-            if item.reveals_fact_id and item.reveals_fact_id not in state.player_known_facts:
+            if (
+                item.reveals_fact_id
+                and item.reveals_fact_id not in state.player_known_facts
+                and MysteryGraph.can_discover_fact(state, item.reveals_fact_id, player.id)
+            ):
                 events.append(
                     FactDiscovered(
                         turn_number=turn,
@@ -99,7 +104,11 @@ class DeterministicResolver:
             item = self._find_item(state, action.target, location_id, include_owned=True)
             if item is not None:
                 observations.append(item.description or f"You inspect {item.name}.")
-                if item.reveals_fact_id and item.reveals_fact_id not in state.player_known_facts:
+                if (
+                    item.reveals_fact_id
+                    and item.reveals_fact_id not in state.player_known_facts
+                    and MysteryGraph.can_discover_fact(state, item.reveals_fact_id, player.id)
+                ):
                     events.append(
                         FactDiscovered(
                             turn_number=turn,
@@ -140,7 +149,11 @@ class DeterministicResolver:
                 return ActionResult(accepted=False, reason="They cannot respond right now.")
             observations = [f"{npc.name} considers your question carefully."]
             events: list[Event] = [TimeAdvanced(turn_number=turn, minutes=2)]
-            revealable = sorted(npc.knowledge.facts_known - state.player_known_facts)
+            revealable = sorted(
+                fact_id
+                for fact_id in npc.knowledge.facts_known - state.player_known_facts
+                if MysteryGraph.can_discover_fact(state, fact_id, player.id)
+            )
             if revealable:
                 fact_id = revealable[0]
                 events.append(
@@ -229,6 +242,9 @@ class DeterministicResolver:
     @staticmethod
     def _inspection_fact(state: WorldState, location_id: str, target: str) -> Fact | None:
         for fact in state.facts.values():
-            if f"inspect:{location_id}:{target}" in fact.tags:
+            if (
+                f"inspect:{location_id}:{target}" in fact.tags
+                and MysteryGraph.can_discover_fact(state, fact.id, state.player_id)
+            ):
                 return fact
         return None

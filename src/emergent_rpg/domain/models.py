@@ -127,6 +127,14 @@ class Fact(BaseModel):
     source: str
     related_entities: set[EntityId] = Field(default_factory=set)
     tags: set[str] = Field(default_factory=set)
+    discovery_prerequisites: set[FactId] = Field(default_factory=set)
+    contradicts: set[FactId] = Field(default_factory=set)
+
+
+class FactInferenceRule(BaseModel):
+    id: str
+    premises: set[FactId] = Field(min_length=1)
+    conclusion: FactId
 
 
 class WorldState(BaseModel):
@@ -137,6 +145,7 @@ class WorldState(BaseModel):
     locations: dict[LocationId, Location]
     items: dict[ItemId, Item]
     facts: dict[FactId, Fact]
+    inference_rules: dict[str, FactInferenceRule] = Field(default_factory=dict)
     player_known_facts: set[FactId] = Field(default_factory=set)
     factions: set[str] = Field(default_factory=set)
 

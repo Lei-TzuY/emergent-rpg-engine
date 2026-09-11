@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from emergent_rpg.domain.actions import PlayerAction
 from emergent_rpg.domain.models import GameSession, Turn, WorldState
+from emergent_rpg.engine.mystery import MysteryGraph
 from emergent_rpg.engine.narrative import DeterministicNarrativePlanner
 from emergent_rpg.engine.reducer import apply_event, replay
 from emergent_rpg.engine.resolver import ActionResult, DeterministicResolver
@@ -31,6 +32,7 @@ class GameEngine:
         self.parser = parser or DeterministicActionParser()
         self.resolver = DeterministicResolver()
         self.planner = DeterministicNarrativePlanner()
+        self.mystery = MysteryGraph()
         self.generator = generator or ScriptedNarrativeGenerator()
 
     def new_session(self, name: str = "Ashfall Relay") -> GameSession:
@@ -72,11 +74,34 @@ class GameEngine:
             return result, narration, before
 
         candidate = before.model_copy(deep=True)
+        emitted_events = list(result.emitted_events)
         for event in result.emitted_events:
             precheck = validate_event_preconditions(candidate, event)
             if not precheck.valid:
                 raise TransitionRejected(str(precheck.issues))
             candidate = apply_event(candidate, event)
+
+        inferred_events = self.mystery.infer_events(
+            candidate,
+            candidate.player_id,
+            candidate.turn_number,
+        )
+        if inferred_events:
+            observations = list(result.observations)
+            for event in inferred_events:
+                precheck = validate_event_preconditions(candidate, event)
+                if not precheck.valid:
+                    raise TransitionRejected(str(precheck.issues))
+                candidate = apply_event(candidate, event)
+                emitted_events.append(event)
+                observations.append(f"Inference: {candidate.facts[event.fact_id].proposition}")
+            result = result.model_copy(
+                update={
+                    "emitted_events": emitted_events,
+                    "observations": observations,
+                    "tags": result.tags | {"inference"},
+                }
+            )
 
         state_report = validate_state(candidate, previous=before)
         if not state_report.valid:

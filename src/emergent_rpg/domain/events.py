@@ -53,6 +53,14 @@ class FactDiscovered(DomainEvent):
     observer_id: str
 
 
+class FactInferred(DomainEvent):
+    type: Literal["fact_inferred"] = "fact_inferred"
+    fact_id: str
+    observer_id: str
+    rule_id: str
+    premise_fact_ids: tuple[str, ...] = Field(min_length=1)
+
+
 class NPCLearnedFact(DomainEvent):
     type: Literal["npc_learned_fact"] = "npc_learned_fact"
     npc_id: str
@@ -86,6 +94,7 @@ Event = Annotated[
     | CharacterDamaged
     | CharacterHealed
     | FactDiscovered
+    | FactInferred
     | NPCLearnedFact
     | RelationshipChanged
     | TimeAdvanced
