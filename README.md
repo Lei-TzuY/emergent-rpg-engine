@@ -28,7 +28,7 @@ Key boundaries:
 - NPC autonomy uses scoped planning contexts, bounded typed intents, and deterministic resolution before any state change.
 - Narrative providers cannot mutate canonical state.
 - Provider failure happens before the state/event transaction is committed.
-- Memory retrieval uses recent turns + ranked deterministic episodes + canonical facts, not the full transcript.
+- Memory retrieval uses recent turns + persisted episodes + canonical facts; optional vectors only rerank existing episodes.
 - All tests remain offline; no API key or network is required for CI.
 
 ## Quick start
@@ -120,6 +120,14 @@ The canonical world carries a five-minute simulation cadence and replayable next
 
 Automatic cycles skip NPCs currently sharing the player's location. This keeps visible conversations/interactions stable while still allowing remote NPCs to move, investigate evidence, and update private knowledge. A large time jump processes at most the configured catch-up budget in one player turn; any remaining backlog stays explicit for later turns. Player narration and episodic-memory metadata do not receive hidden NPC identities merely because a background cycle occurred.
 
+## Optional vector memory retrieval
+
+`MemoryRetriever` keeps its deterministic recency/entity/location/tag/importance ranking by default. An optional `EmbeddingBackend` can add cosine similarity as a reranking signal over the **same persisted Episode objects**. The backend receives text and returns vectors only; it cannot return new episode IDs, facts, or state changes.
+
+`HashingEmbeddingBackend` is a built-in offline feature-hashing implementation that produces normalized deterministic vectors without a network service or extra dependency. It proves the vector path end-to-end and can be replaced by a neural embedding backend later. Malformed batches, inconsistent dimensions, NaN/Inf values, or backend exceptions automatically fall back to deterministic ranking.
+
+Canonical semantic facts are still selected only from `player_known_facts`, so vector retrieval cannot reveal NPC-private facts or promote unobserved world truth into player memory.
+
 ## Demo world: Ashfall Relay
 
 Ashfall Relay is an original frontier mystery with six locations, five NPCs, two factions, eight items, and a chain of clues around a suspicious communications blackout. Different NPCs know different facts. Clues can have prerequisite gates, deterministic deductions can unlock derived facts with replayable provenance, and contradictory testimony remains scoped to the observer who actually learned it. Evidence can remain untouched for hundreds of turns and still be recovered because it lives in canonical state, not narration context.
@@ -132,11 +140,11 @@ mypy src/emergent_rpg
 pytest
 ```
 
-CI runs all three checks on Python 3.12. Provider tests inject an in-memory transport and never contact an external service.
+CI runs all three checks on Python 3.12. Provider and embedding tests are offline and never require an external service.
 
 ## Current limitations
 
-Vector retrieval, web APIs, web UI, richer combat/stat systems, provider routing, and cost controls are future work. World simulation currently covers deterministic cadence plus off-screen NPC goals; richer scheduled world events and non-NPC environmental systems remain future extensions.
+Web APIs, web UI, richer combat/stat systems, local-model presets, provider routing, and cost controls are future work. World simulation currently covers deterministic cadence plus off-screen NPC goals; richer scheduled world events and non-NPC environmental systems remain future extensions. The built-in vector backend is deterministic feature hashing rather than a neural embedding model.
 
 The OpenAI-compatible provider currently targets the common `/chat/completions` JSON shape and intentionally supports text responses only. Live endpoint interoperability depends on the selected server/model and is not claimed by offline CI.
 
