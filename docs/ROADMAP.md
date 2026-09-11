@@ -12,8 +12,8 @@ The project advances by coherent executable slices rather than placeholder subsy
 8. **Local-model support / Ollama** — explicit Ollama narration/action-parser presets, local defaults, namespaced configuration, and offline transport tests. **Complete.**
 9. **Web API** — thin FastAPI boundary over `GameEngine`, player-visible state projection, persisted session/history/action endpoints, and HTTP failure atomicity. **Complete.**
 10. **Web UI** — same-origin API-backed browser client with session lifecycle, player-visible state/history rendering, action submission, explicit loading/error states, and packaged static assets. **Complete.**
-11. **Model routing / cost controls** — per-stage provider selection, budgets, and caching. **Next.**
-12. **Evaluation harness for 1,000+ turn consistency** — repeatable long-run continuity metrics and adversarial scenarios.
+11. **Model routing / cost controls** — per-stage provider/model configuration, finite request/reserved-token budgets, bounded completion caching, and failure atomicity. **Complete.**
+12. **Evaluation harness for 1,000+ turn consistency** — repeatable long-run continuity metrics and adversarial scenarios. **Next.**
 
 ## Milestone 3 invariant
 
@@ -137,6 +137,26 @@ browser DOM
 
 The JavaScript does not import Python engine code, read SQLite, create domain events, or infer hidden canonical state. It renders only the bounded Milestone 9 response models and writes returned world/player strings with DOM `textContent`. Session creation/loading, bounded history, action submission, busy state, deterministic rejection, and request/provider errors all flow through the existing API contract. Static browser assets are explicitly included in the wheel and CI opens the built wheel to verify the three required distribution paths, preventing a source-checkout-only UI from being treated as a completed feature.
 
-## Promotion gate for Milestone 11
+## Milestone 11 invariant
 
-Model routing/cost controls must remain policy around existing provider boundaries rather than a new state authority. Routing may choose provider/model separately for parsing and narration, enforce bounded request/token budgets, and reuse safe cached language outputs, but budget/cache metadata must not become canonical world truth. A denied/exhausted provider call must fail or fall back according to explicit policy without partially committing a turn. Tests must prove deterministic policy selection, budget accounting, cache-key isolation across stage/model/configuration, and transaction atomicity without requiring external model services.
+Model controls remain process-local policy around the existing provider boundary:
+
+```text
+stage-specific provider/model configuration
+→ bounded completion-cache lookup
+→ finite request + reserved-output-token reservation on miss
+→ existing provider transport
+→ language result only
+→ parser proposal or narration prose
+→ deterministic GameEngine authority unchanged
+```
+
+Narration and action parsing may independently override endpoint, model, credential, timeout, temperature, and max-token configuration while preserving generic configuration as a fallback. Completion-cache keys include stage, endpoint/model, credential fingerprint, prompts, structured payload, temperature, and max-token ceiling. Successful cache hits perform no external request and consume no provider budget.
+
+Budgets count attempted external requests and reserved output-token ceilings, not actual provider token usage or monetary cost. The current transport contract does not require trustworthy usage metadata, so no billing claim is inferred from request limits. A narration budget denial occurs before persistence and leaves state/events/turns unchanged. An action-parser budget denial remains a typed `ProviderError`, allowing the existing deterministic parser fallback; the resolver still decides legality.
+
+Budget/cache metadata is not canonical state and is never persisted as world truth. Offline tests prove route selection, budget accounting, cache isolation, LRU bounds, parser fallback, and transaction atomicity.
+
+## Promotion gate for Milestone 12
+
+The long-run evaluation harness must measure deterministic continuity properties rather than manufacture a score from CI runtime. It should execute repeatable seeded/adversarial scenarios for at least 1,000 turns, validate replay equality and invariant preservation throughout, report machine-readable metrics/failures, and distinguish engine correctness from provider-quality observations. Any performance metric must come from an explicit controlled benchmark configuration rather than ordinary CI timing.
