@@ -102,6 +102,21 @@ The LLM action parser receives only the player's current interaction surface: cu
 
 If action parsing fails, the engine logs the provider failure and falls back to the deterministic command parser. If narrative generation fails, the accepted candidate state is **not committed**. In either case, a provider cannot directly mutate canonical state.
 
+## Ollama / local models
+
+Ollama is an explicit provider/parser preset rather than a separate engine path. With a local Ollama daemon exposing its OpenAI-compatible API, only the model name is required:
+
+```bash
+export EMERGENT_RPG_OLLAMA_MODEL="qwen3.5:27b"
+
+emergent-rpg play --provider ollama
+emergent-rpg play --action-parser ollama --provider ollama
+```
+
+The preset defaults to `http://127.0.0.1:11434/v1`. Optional local-only overrides are `EMERGENT_RPG_OLLAMA_BASE_URL`, `EMERGENT_RPG_OLLAMA_API_KEY`, `EMERGENT_RPG_OLLAMA_TIMEOUT`, `EMERGENT_RPG_OLLAMA_TEMPERATURE`, and `EMERGENT_RPG_OLLAMA_MAX_TOKENS`. Generic `EMERGENT_RPG_LLM_API_KEY` is deliberately not inherited by the Ollama preset.
+
+Both Ollama narration and action parsing reuse the existing OpenAI-compatible transport and safety boundaries. Tests use an injected fake transport, so CI never requires Ollama to be installed or running.
+
 ## NPC autonomous planning
 
 Milestone 5 adds deterministic autonomous NPC execution without giving a planner mutation authority. NPCs can carry structured goals such as reaching a location or investigating an item. The planner receives only the NPC's own knowledge/social state plus local observations, emits a bounded typed intent, and the deterministic NPC resolver must accept it before normal validated events can change canonical state.
@@ -144,7 +159,7 @@ CI runs all three checks on Python 3.12. Provider and embedding tests are offlin
 
 ## Current limitations
 
-Web APIs, web UI, richer combat/stat systems, local-model presets, provider routing, and cost controls are future work. World simulation currently covers deterministic cadence plus off-screen NPC goals; richer scheduled world events and non-NPC environmental systems remain future extensions. The built-in vector backend is deterministic feature hashing rather than a neural embedding model.
+Web APIs, web UI, richer combat/stat systems, model routing/cost controls, and neural embedding integration are future work. World simulation currently covers deterministic cadence plus off-screen NPC goals; richer scheduled world events and non-NPC environmental systems remain future extensions.
 
 The OpenAI-compatible provider currently targets the common `/chat/completions` JSON shape and intentionally supports text responses only. Live endpoint interoperability depends on the selected server/model and is not claimed by offline CI.
 
