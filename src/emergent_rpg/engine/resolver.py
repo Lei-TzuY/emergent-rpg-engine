@@ -20,6 +20,7 @@ from emergent_rpg.domain.events import (
     TimeAdvanced,
 )
 from emergent_rpg.domain.models import NPC, Fact, Item, WorldState
+from emergent_rpg.engine.environment import EnvironmentalRules
 from emergent_rpg.engine.mystery import MysteryGraph
 
 
@@ -33,6 +34,9 @@ class ActionResult(BaseModel):
 
 
 class DeterministicResolver:
+    def __init__(self, environmental_rules: EnvironmentalRules | None = None) -> None:
+        self.environmental_rules = environmental_rules or EnvironmentalRules()
+
     def resolve(self, state: WorldState, action: PlayerAction) -> ActionResult:
         turn = state.turn_number + 1
         player = state.player()
@@ -46,6 +50,16 @@ class DeterministicResolver:
             destination = self._resolve_destination(state, location_id, action.destination)
             if destination is None:
                 return ActionResult(accepted=False, reason="There is no such exit from here.")
+            traversal = self.environmental_rules.traversal_cost(state, location_id)
+            observations = [f"You travel to {state.locations[destination].name}."]
+            tags = {"movement"}
+            if traversal.extra_minutes:
+                names = ", ".join(traversal.condition_names)
+                observations.append(
+                    f"Environmental conditions add {traversal.extra_minutes} minute(s) "
+                    f"to the trip: {names}."
+                )
+                tags.add("environment")
             return ActionResult(
                 accepted=True,
                 emitted_events=[
@@ -55,11 +69,11 @@ class DeterministicResolver:
                         from_location=location_id,
                         to_location=destination,
                     ),
-                    TimeAdvanced(turn_number=turn, minutes=5),
+                    TimeAdvanced(turn_number=turn, minutes=traversal.total_minutes),
                 ],
-                observations=[f"You travel to {state.locations[destination].name}."],
+                observations=observations,
                 involved_entities={player.id},
-                tags={"movement"},
+                tags=tags,
             )
 
         if isinstance(action, TakeAction):
