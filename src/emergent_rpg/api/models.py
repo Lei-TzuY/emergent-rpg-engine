@@ -28,12 +28,19 @@ class KnownFact(BaseModel):
     proposition: str
 
 
+class LocationConditionView(BaseModel):
+    code: str
+    name: str
+    description: str
+
+
 class PlayerStateView(BaseModel):
     turn_number: int
     time: str
     location_id: str
     location_name: str
     exits: dict[str, str]
+    location_conditions: list[LocationConditionView] = Field(default_factory=list)
     visible_items: list[VisibleItem] = Field(default_factory=list)
     visible_npcs: list[VisibleNPC] = Field(default_factory=list)
     inventory: list[VisibleItem] = Field(default_factory=list)
@@ -98,6 +105,14 @@ def project_player_state(state: WorldState) -> PlayerStateView:
         KnownFact(id=fact_id, proposition=state.facts[fact_id].proposition)
         for fact_id in sorted(state.player_known_facts)
     ]
+    conditions = [
+        LocationConditionView(
+            code=condition.code,
+            name=condition.name,
+            description=condition.description,
+        )
+        for _, condition in sorted(location.active_conditions.items())
+    ]
     exits = {
         alias: state.locations[destination].name
         for alias, destination in sorted(location.exits.items())
@@ -108,6 +123,7 @@ def project_player_state(state: WorldState) -> PlayerStateView:
         location_id=location.id,
         location_name=location.name,
         exits=exits,
+        location_conditions=conditions,
         visible_items=visible_items,
         visible_npcs=visible_npcs,
         inventory=inventory,

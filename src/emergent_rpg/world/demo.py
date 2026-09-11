@@ -7,9 +7,11 @@ from emergent_rpg.domain.models import (
     FactInferenceRule,
     Item,
     Location,
+    LocationCondition,
     NPCGoal,
     NPCKnowledge,
     PlayerCharacter,
+    ScheduledLocationCondition,
     TruthStatus,
     WorldState,
 )
@@ -350,5 +352,20 @@ def build_demo_world() -> WorldState:
         items=items,
         facts=facts,
         inference_rules=inference_rules,
+        scheduled_location_conditions=[
+            ScheduledLocationCondition(
+                id="yard_ash_squall",
+                due_absolute_minute=8 * 60 + 20,
+                location_id="yard",
+                condition=LocationCondition(
+                    code="ash_squall",
+                    name="Ash squall",
+                    description=(
+                        "A dense ash squall sweeps across the yard, reducing visibility and "
+                        "turning the black grit into a stinging horizontal sheet."
+                    ),
+                ),
+            )
+        ],
         factions={"Relay Guild", "Survey Corps"},
     )

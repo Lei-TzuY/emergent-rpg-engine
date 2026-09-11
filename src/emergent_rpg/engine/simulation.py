@@ -10,6 +10,11 @@ class SimulationSchedule(BaseModel):
     backlog_remaining: bool = False
 
 
+class WorldEventSchedule(BaseModel):
+    due_event_ids: list[str] = Field(default_factory=list)
+    backlog_remaining: bool = False
+
+
 class DeterministicSimulationScheduler:
     def due_cycles(self, state: WorldState) -> SimulationSchedule:
         simulation = state.simulation
@@ -22,4 +27,20 @@ class DeterministicSimulationScheduler:
         return SimulationSchedule(
             due_absolute_minutes=due,
             backlog_remaining=cursor <= now,
+        )
+
+
+class DeterministicWorldEventScheduler:
+    def due_events(self, state: WorldState) -> WorldEventSchedule:
+        now = state.clock.absolute_minutes
+        pending = sorted(
+            state.scheduled_location_conditions,
+            key=lambda event: (event.due_absolute_minute, event.id),
+        )
+        all_due = [event for event in pending if event.due_absolute_minute <= now]
+        limit = state.simulation.max_scheduled_events_per_turn
+        selected = all_due[:limit]
+        return WorldEventSchedule(
+            due_event_ids=[event.id for event in selected],
+            backlog_remaining=len(all_due) > len(selected),
         )

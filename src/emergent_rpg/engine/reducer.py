@@ -13,6 +13,7 @@ from emergent_rpg.domain.events import (
     NPCMoved,
     PlayerMoved,
     RelationshipChanged,
+    ScheduledLocationConditionApplied,
     SimulationCycleProcessed,
     StatusApplied,
     TimeAdvanced,
@@ -94,6 +95,23 @@ def apply_event(state: WorldState, event: Event) -> WorldState:
         new_state.simulation.next_due_absolute_minute = (
             event.scheduled_absolute_minute + new_state.simulation.cadence_minutes
         )
+    elif isinstance(event, ScheduledLocationConditionApplied):
+        index = next(
+            (
+                idx
+                for idx, scheduled in enumerate(new_state.scheduled_location_conditions)
+                if scheduled.id == event.scheduled_event_id
+            ),
+            None,
+        )
+        if index is None:
+            raise ReductionError("scheduled location condition no longer exists")
+        scheduled = new_state.scheduled_location_conditions[index]
+        location = new_state.locations[scheduled.location_id]
+        location.active_conditions[scheduled.condition.code] = scheduled.condition.model_copy(
+            deep=True
+        )
+        del new_state.scheduled_location_conditions[index]
     elif isinstance(event, StatusApplied):
         char = new_state.entities[event.entity_id].state
         if all(status.code != event.code for status in char.status_conditions):

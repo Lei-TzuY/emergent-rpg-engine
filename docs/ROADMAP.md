@@ -14,7 +14,8 @@ The project advances by coherent executable slices rather than placeholder subsy
 10. **Web UI** — same-origin API-backed browser client with session lifecycle, player-visible state/history rendering, action submission, explicit loading/error states, and packaged static assets. **Complete.**
 11. **Model routing / cost controls** — per-stage provider/model configuration, finite request/reserved-token budgets, bounded completion caching, and failure atomicity. **Complete.**
 12. **Evaluation harness for 1,000+ turn consistency** — deterministic seeded/adversarial workload, periodic replay/invariant checkpoints, machine-readable reports, and a real 1,000-accepted-turn CI gate. **Complete.**
-13. **Scheduled world events / environmental simulation** — canonical future-event scheduling, replayable due-event execution, bounded catch-up, and deterministic non-NPC world consequences. **Next.**
+13. **Scheduled world events / environmental simulation** — canonical future-event queue, deterministic due-time execution, replayable schedule consumption, bounded catch-up, API/UI-visible active location conditions, and atomic integration with NPC simulation. **Complete.**
+14. **Environmental rules / traversal hazards** — declarative active-condition effects that alter deterministic action legality/cost/consequences through the ordinary resolver/event pipeline. **Next.**
 
 ## Milestone 3 invariant
 
@@ -176,6 +177,26 @@ At checkpoints, the evaluator independently reloads persisted data and verifies 
 
 The first complete candidate with seed `20260911` produced 1,058 submitted actions, 1,000 accepted turns, 58 deterministic rejections, 2,268 events, and 1,000 episodes, with checkpoints through turn 1,000, all tracked invariants true, `failures=[]`, and `passed=true`. This is correctness evidence for that deterministic scenario, not a performance, throughput, model-quality, or billing claim.
 
-## Promotion gate for Milestone 13
+## Milestone 13 invariant
 
-Scheduled environmental events must be canonical and replayable rather than hidden timers. Future-event definitions or queue entries must live in authoritative state, become due from the world clock rather than wall-clock time, emit ordinary validated typed events, and advance/remove their schedule through replayable state transitions. Processing must be deterministic and bounded when a large player time jump makes many events due. Non-NPC consequences must integrate with the same atomic player-turn transaction and must not leak hidden future-event metadata into player-facing memory/history before the event becomes observable. Tests must prove due-time ordering, bounded catch-up, replay equality, restart persistence, and rejection of out-of-order or duplicate schedule execution.
+Future environmental consequences are canonical world data rather than hidden timers:
+
+```text
+WorldState.scheduled_location_conditions
+→ canonical world clock reaches due minute
+→ deterministic bounded scheduler ordered by (due minute, id)
+→ ScheduledLocationConditionApplied
+→ validator checks exact first pending entry and due time
+→ reducer activates Location.active_conditions and consumes schedule entry
+→ ordinary persistence / replay
+```
+
+The environmental scheduler is merged with existing NPC simulation into one deterministic world-time timeline. Environmental events execute before NPC cycles at the same minute, while both subsystems retain independent catch-up bounds. Narrative generation still precedes automatic simulation, so provider failure preserves zero-partial-commit semantics for both player actions and due world events.
+
+Pending schedule ids/times never enter `PlayerStateView`; only conditions already active at the player's current location are projected to the API/browser. The Ashfall Relay demo therefore does not reveal `yard_ash_squall` before Day 1 08:20, but after the due event the `ash_squall` condition is replayable canonical state and visible in the UI.
+
+The first complete M13 implementation head passed 83 pytest tests and the existing seeded 1,000-accepted-turn gate. That run preserved the same 1,058 submissions / 1,000 accepted / 58 rejected / 1,000 episode behavior while the event log increased from 2,268 to 2,269 events, exactly accounting for the newly scheduled environmental event. All tracked continuity invariants remained true with `failures=[]`.
+
+## Promotion gate for Milestone 14
+
+Environmental rules must turn active conditions into deterministic gameplay mechanics rather than prose-only metadata. Effects must be declarative/canonical, interpreted by the existing resolver or another deterministic rule layer, and emitted as ordinary validated events. The first vertical slice should prove at least one active condition changes an executable action's legality, time cost, stamina/health consequence, or route availability without giving the LLM mutation authority. Tests must cover rule activation/deactivation boundaries, resolver behavior, replay equality, provider-failure atomicity, API-visible explanation of blocked/modified actions where appropriate, and the 1,000-turn continuity gate. Avoid hard-coding one demo condition directly into resolver control flow; rules should be data-driven enough to support additional hazards without new action-specific branches for each named condition.
