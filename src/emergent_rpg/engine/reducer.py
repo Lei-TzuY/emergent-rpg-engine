@@ -5,6 +5,7 @@ from emergent_rpg.domain.events import (
     CharacterHealed,
     Event,
     FactDiscovered,
+    FactInferred,
     ItemAcquired,
     ItemDropped,
     NPCLearnedFact,
@@ -55,7 +56,7 @@ def apply_event(state: WorldState, event: Event) -> WorldState:
         if not char.alive:
             raise ReductionError("healing cannot resurrect a dead character")
         char.health = min(10, char.health + event.amount)
-    elif isinstance(event, FactDiscovered):
+    elif isinstance(event, (FactDiscovered, FactInferred)):
         if event.observer_id == new_state.player_id:
             new_state.player_known_facts.add(event.fact_id)
         else:

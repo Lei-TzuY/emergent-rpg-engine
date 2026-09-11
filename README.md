@@ -24,6 +24,7 @@ Key boundaries:
 - Canonical world state owns location, time, inventory, health, facts, relationships, and NPC knowledge.
 - NPC knowledge is separate from objective truth and from player knowledge.
 - Every material change is a typed event that can be replayed.
+- Mystery deductions are replayable `FactInferred` events with rule/premise provenance.
 - Narrative providers cannot mutate canonical state.
 - Provider failure happens before the state/event transaction is committed.
 - Memory retrieval uses recent turns + ranked deterministic episodes + canonical facts, not the full transcript.
@@ -101,7 +102,7 @@ If action parsing fails, the engine logs the provider failure and falls back to 
 
 ## Demo world: Ashfall Relay
 
-Ashfall Relay is an original frontier mystery with six locations, five NPCs, two factions, eight items, and a chain of clues around a suspicious communications blackout. Different NPCs know different facts. Evidence can remain untouched for hundreds of turns and still be recovered because it lives in canonical state, not narration context.
+Ashfall Relay is an original frontier mystery with six locations, five NPCs, two factions, eight items, and a chain of clues around a suspicious communications blackout. Different NPCs know different facts. Clues can have prerequisite gates, deterministic deductions can unlock derived facts with replayable provenance, and contradictory testimony remains scoped to the observer who actually learned it. Evidence can remain untouched for hundreds of turns and still be recovered because it lives in canonical state, not narration context.
 
 ## Development
 
@@ -115,7 +116,7 @@ CI runs all three checks on Python 3.12. Provider tests inject an in-memory tran
 
 ## Current limitations
 
-Autonomous NPC planning, explicit mystery/inference graphs, world simulation between turns, vector retrieval, web APIs, web UI, richer combat/stat systems, provider routing, and cost controls are future work.
+Autonomous NPC planning, world simulation between turns, vector retrieval, web APIs, web UI, richer combat/stat systems, provider routing, and cost controls are future work.
 
 The OpenAI-compatible provider currently targets the common `/chat/completions` JSON shape and intentionally supports text responses only. Live endpoint interoperability depends on the selected server/model and is not claimed by offline CI.
 

@@ -60,6 +60,16 @@ Player-facing narration may use only facts in `player_known_facts` after the acc
 
 Narration is non-authoritative. `ScenePlan` lists only accepted events, resolver observations, allowed information, and continuity constraints. `NarrativeGenerator` receives the plan but has no state mutation API.
 
+## Mystery graph
+
+Mystery logic is represented in canonical state rather than inferred from narration. `Fact` supports discovery prerequisites and explicit contradiction edges, while `FactInferenceRule` maps a set of premise fact IDs to one derived conclusion.
+
+After accepted resolver events are reduced into the candidate state, `MysteryGraph` deterministically evaluates player inference rules to a fixpoint. Each newly derived conclusion is emitted as `FactInferred`, carrying both the `rule_id` and exact `premise_fact_ids`. Those inference events pass the same precondition validation, reducer, persistence, and replay path as other material state changes.
+
+The validator enforces the provenance boundary: a fact marked `discoverability="inferred"` cannot be introduced through an ordinary `FactDiscovered` event, a discovery gate cannot be bypassed without its prerequisites, and an inference event is rejected unless its observer already knows every registered premise. World validation also rejects dangling mystery references and rules whose conclusion is not marked inferred.
+
+Contradictions are observer-scoped. `MysteryGraph.contradictions(state, observer_id)` compares only facts known by that player/NPC; learning a conflicting claim does not magically transfer either side of the contradiction to another observer. The current engine automatically evaluates derived knowledge for the player after accepted player turns.
+
 ## Memory
 
 Three tiers are present:

@@ -4,10 +4,12 @@ from emergent_rpg.domain.models import (
     NPC,
     CharacterState,
     Fact,
+    FactInferenceRule,
     Item,
     Location,
     NPCKnowledge,
     PlayerCharacter,
+    TruthStatus,
     WorldState,
 )
 
@@ -113,7 +115,9 @@ def build_demo_world() -> WorldState:
         faction="Survey Corps",
         state=CharacterState(current_location="bunkhouse"),
         goals=["leave Ashfall before nightfall"],
-        knowledge=NPCKnowledge(facts_known={"fact_ridge_lights"}),
+        knowledge=NPCKnowledge(
+            facts_known={"fact_dax_generator_claim", "fact_ridge_lights"}
+        ),
     )
 
     facts = {
@@ -132,6 +136,16 @@ def build_demo_world() -> WorldState:
             source="generator mechanic's local meter",
             related_entities={"npc_lio"},
             tags={"generator", "alibi"},
+            contradicts={"fact_dax_generator_claim"},
+        ),
+        "fact_dax_generator_claim": Fact(
+            id="fact_dax_generator_claim",
+            proposition="Dax claims the generator failed violently before the relay went dark.",
+            truth_status=TruthStatus.FALSE,
+            source="Dax eyewitness claim",
+            related_entities={"npc_dax", "npc_lio"},
+            tags={"witness", "generator", "contradiction"},
+            contradicts={"fact_generator_stable"},
         ),
         "fact_manifest_gap": Fact(
             id="fact_manifest_gap",
@@ -190,6 +204,52 @@ def build_demo_world() -> WorldState:
             source="maintenance slate",
             related_entities={"npc_arden"},
             tags={"item", "timeline"},
+        ),
+        "fact_inside_job": Fact(
+            id="fact_inside_job",
+            proposition=(
+                "The blackout required deliberate local access outside any authorized "
+                "maintenance window."
+            ),
+            discoverability="inferred",
+            source="deduction from relay diagnostics and maintenance schedule",
+            related_entities={"npc_arden"},
+            tags={"inference", "sabotage", "timeline"},
+        ),
+        "fact_coordinated_sabotage": Fact(
+            id="fact_coordinated_sabotage",
+            proposition=(
+                "The relay blackout and the staged ridge overload were coordinated sabotage, "
+                "not an equipment failure."
+            ),
+            discoverability="inferred",
+            source="deduction from local access and the cut ridge fuse",
+            related_entities={"npc_arden", "npc_mina"},
+            tags={"inference", "sabotage", "mystery"},
+        ),
+        "fact_c7_checkout": Fact(
+            id="fact_c7_checkout",
+            proposition=(
+                "Locker C-7 records a maintenance credential checkout at 01:58 under a "
+                "falsified work order."
+            ),
+            source="C-7 archive locker log",
+            related_entities={"npc_arden", "npc_sera"},
+            tags={"inspect:archive:locker", "clue", "credential"},
+            discovery_prerequisites={"fact_key_mark", "fact_inside_job"},
+        ),
+    }
+
+    inference_rules = {
+        "infer_inside_job": FactInferenceRule(
+            id="infer_inside_job",
+            premises={"fact_relay_sabotage", "fact_schedule"},
+            conclusion="fact_inside_job",
+        ),
+        "infer_coordinated_sabotage": FactInferenceRule(
+            id="infer_coordinated_sabotage",
+            premises={"fact_inside_job", "fact_fuse_cut"},
+            conclusion="fact_coordinated_sabotage",
         ),
     }
 
@@ -265,9 +325,13 @@ def build_demo_world() -> WorldState:
 
     return WorldState(
         player_id="player",
-        entities={entity.id: entity for entity in (player, arden, lio, sera, mina, dax)},
+        entities={
+            entity.id: entity
+            for entity in (player, arden, lio, sera, mina, dax)
+        },
         locations=locations,
         items=items,
         facts=facts,
+        inference_rules=inference_rules,
         factions={"Relay Guild", "Survey Corps"},
     )
