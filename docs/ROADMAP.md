@@ -10,8 +10,8 @@ The project advances by coherent executable slices rather than placeholder subsy
 6. **World simulation between player turns** — canonical simulation cursor, replayable cadence markers, bounded catch-up, and time-aware off-screen NPC consequences. **Complete.**
 7. **Vector/embedding retrieval** — optional vector cosine reranking over persisted episodes, deterministic fallback, malformed-output rejection, and no truth authority. **Complete.**
 8. **Local-model support / Ollama** — explicit Ollama narration/action-parser presets, local defaults, namespaced configuration, and offline transport tests. **Complete.**
-9. **Web API** — stable service boundary over the core engine. **Next.**
-10. **Web UI** — presentation layer over persisted sessions.
+9. **Web API** — thin FastAPI boundary over `GameEngine`, player-visible state projection, persisted session/history/action endpoints, and HTTP failure atomicity. **Complete.**
+10. **Web UI** — browser presentation layer over the stable API boundary. **Next.**
 11. **Model routing / cost controls** — per-stage provider selection, budgets, and caching.
 12. **Evaluation harness for 1,000+ turn consistency** — repeatable long-run continuity metrics and adversarial scenarios.
 
@@ -105,6 +105,23 @@ provider/parser name = ollama
 
 `EMERGENT_RPG_OLLAMA_MODEL` is explicit and required; base URL, proxy API key, timeout, temperature, and token budget have separate `EMERGENT_RPG_OLLAMA_*` controls. The preset does not inherit generic `EMERGENT_RPG_LLM_API_KEY`, preventing accidental credential bleed into a local endpoint. CI uses injected fake transport and never requires a live Ollama daemon.
 
-## Promotion gate for Milestone 9
+## Milestone 9 invariant
 
-The Web API must be a thin service boundary over `GameEngine`, not a second game engine. HTTP handlers may validate/serialize requests, select an existing provider/parser mode, and expose persisted session/state/history operations, but all state transitions must continue through the same resolver/event/validator/persistence pipeline. API tests must run in-process/offline and prove malformed requests or provider failures cannot partially mutate a session.
+The Web API is a transport boundary, not a second engine:
+
+```text
+HTTP request
+→ Pydantic/FastAPI validation
+→ existing ActionParser
+→ GameEngine.process_text()
+→ resolver / typed events / validators / reducer
+→ provider narration + world simulation
+→ SQLite atomic commit
+→ player-visible HTTP projection
+```
+
+Handlers do not construct or reduce domain events and do not write canonical state directly. Session/action responses serialize a dedicated player-visible projection instead of raw `WorldState`, so undiscovered fact truth/source metadata, NPC private knowledge, planning goals, relationships, inference rules, and simulation internals remain hidden. History omits internal involved-entity/tag metadata. Malformed requests are rejected before engine execution; unknown sessions map to `404`, transition invariant failures to `409`, and provider failures to `502` while preserving the engine's pre-commit atomicity. In-process API tests also prove persisted state remains replay-equivalent after accepted HTTP actions.
+
+## Promotion gate for Milestone 10
+
+The Web UI must consume the Web API rather than importing engine internals or reading SQLite directly. It may render player-visible state, history, and action responses, but it must not reconstruct hidden canonical state client-side or add a parallel mutation channel. UI integration tests should exercise the API contract and preserve loading/error states for rejected actions and provider failures.

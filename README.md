@@ -29,7 +29,8 @@ Key boundaries:
 - Narrative providers cannot mutate canonical state.
 - Provider failure happens before the state/event transaction is committed.
 - Memory retrieval uses recent turns + persisted episodes + canonical facts; optional vectors only rerank existing episodes.
-- All tests remain offline; no API key or network is required for CI.
+- The Web API is a thin player-visible projection over the same `GameEngine`, not a second mutation path.
+- All tests remain offline; no API key or external service is required for CI.
 
 ## Quick start
 
@@ -51,6 +52,7 @@ emergent-rpg status
 emergent-rpg history
 emergent-rpg npc-step --max-actions 3
 emergent-rpg play
+emergent-rpg-api --db emergent-rpg.db
 ```
 
 Inside the demo:
@@ -117,6 +119,25 @@ The preset defaults to `http://127.0.0.1:11434/v1`. Optional local-only override
 
 Both Ollama narration and action parsing reuse the existing OpenAI-compatible transport and safety boundaries. Tests use an injected fake transport, so CI never requires Ollama to be installed or running.
 
+## Web API
+
+The FastAPI layer is executable through:
+
+```bash
+emergent-rpg-api --db emergent-rpg.db --host 127.0.0.1 --port 8000
+```
+
+It exposes `GET /health`, session create/read, bounded history, and `POST /sessions/{session_id}/actions`. Raw player text still enters `GameEngine.process_text()`, so HTTP requests use the same parser, deterministic resolver, typed events, validators, simulation, persistence, and replay path as the CLI.
+
+Session/action responses serialize a dedicated player-visible projection instead of raw `WorldState`: current location/time, local exits/items/NPCs, inventory, and already-known facts. Hidden propositions, truth/source metadata, NPC private knowledge, goals, relationships, inference rules, and simulation internals are not exposed. Provider failure maps to HTTP `502` without committing state/events/turns. See `docs/API.md` for the endpoint and error contract.
+
+The API can use the same provider/parser modes at process startup:
+
+```bash
+emergent-rpg-api --provider scripted --action-parser deterministic
+emergent-rpg-api --provider ollama --action-parser ollama
+```
+
 ## NPC autonomous planning
 
 Milestone 5 adds deterministic autonomous NPC execution without giving a planner mutation authority. NPCs can carry structured goals such as reaching a location or investigating an item. The planner receives only the NPC's own knowledge/social state plus local observations, emits a bounded typed intent, and the deterministic NPC resolver must accept it before normal validated events can change canonical state.
@@ -155,11 +176,11 @@ mypy src/emergent_rpg
 pytest
 ```
 
-CI runs all three checks on Python 3.12. Provider and embedding tests are offline and never require an external service.
+CI runs all three checks on Python 3.12. Provider, embedding, and FastAPI integration tests are offline; API tests use in-process `TestClient` and never start a network listener.
 
 ## Current limitations
 
-Web APIs, web UI, richer combat/stat systems, model routing/cost controls, and neural embedding integration are future work. World simulation currently covers deterministic cadence plus off-screen NPC goals; richer scheduled world events and non-NPC environmental systems remain future extensions.
+A browser UI, richer combat/stat systems, model routing/cost controls, authentication/multi-user API concerns, and neural embedding integration are future work. World simulation currently covers deterministic cadence plus off-screen NPC goals; richer scheduled world events and non-NPC environmental systems remain future extensions.
 
 The OpenAI-compatible provider currently targets the common `/chat/completions` JSON shape and intentionally supports text responses only. Live endpoint interoperability depends on the selected server/model and is not claimed by offline CI.
 
