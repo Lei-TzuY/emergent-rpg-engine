@@ -22,7 +22,7 @@ class MemoryRetriever:
         state = self.store.load_state(session_id)
         turns = self.store.list_turns(session_id, limit=self.working_turns)
         working = [f"T{turn.turn_number} {turn.raw_input}: {turn.narration}" for turn in turns]
-        query_tags = {player_action.kind}
+        query_tags = {str(player_action.kind)}
         ranked = sorted(
             self.store.list_episodes(session_id),
             key=lambda episode: self._score(
