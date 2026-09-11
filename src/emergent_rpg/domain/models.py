@@ -113,11 +113,25 @@ class NPC(Entity):
 Character = Annotated[PlayerCharacter | NPC, Field(discriminator="kind")]
 
 
+class LocationCondition(BaseModel):
+    code: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    description: str = Field(min_length=1)
+
+
 class Location(BaseModel):
     id: LocationId
     name: str
     description: str
     exits: dict[str, LocationId] = Field(default_factory=dict)
+    active_conditions: dict[str, LocationCondition] = Field(default_factory=dict)
+
+
+class ScheduledLocationCondition(BaseModel):
+    id: str = Field(min_length=1)
+    due_absolute_minute: int = Field(ge=0)
+    location_id: LocationId
+    condition: LocationCondition
 
 
 class Item(BaseModel):
@@ -161,6 +175,7 @@ class SimulationState(BaseModel):
     next_due_absolute_minute: int = Field(default=8 * 60 + 5, ge=0)
     max_catch_up_cycles: int = Field(default=12, ge=1, le=100)
     max_npc_actions_per_cycle: int = Field(default=3, ge=1, le=20)
+    max_scheduled_events_per_turn: int = Field(default=4, ge=1, le=50)
 
 
 class WorldState(BaseModel):
@@ -173,6 +188,7 @@ class WorldState(BaseModel):
     facts: dict[FactId, Fact]
     inference_rules: dict[str, FactInferenceRule] = Field(default_factory=dict)
     simulation: SimulationState = Field(default_factory=SimulationState)
+    scheduled_location_conditions: list[ScheduledLocationCondition] = Field(default_factory=list)
     player_known_facts: set[FactId] = Field(default_factory=set)
     factions: set[str] = Field(default_factory=set)
 
