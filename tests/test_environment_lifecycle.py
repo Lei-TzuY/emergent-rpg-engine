@@ -12,6 +12,7 @@ from emergent_rpg.domain.events import (
     ScheduledLocationConditionExpired,
     TimeAdvanced,
 )
+from emergent_rpg.engine.narrative import ScenePlan
 from emergent_rpg.engine.reducer import apply_event
 from emergent_rpg.engine.resolver import ActionResult, DeterministicResolver
 from emergent_rpg.engine.service import GameEngine
@@ -19,7 +20,6 @@ from emergent_rpg.engine.simulation import DeterministicWorldEventScheduler
 from emergent_rpg.persistence.db import SQLiteStore
 from emergent_rpg.providers.base import NarrativeGenerator
 from emergent_rpg.providers.errors import ProviderRequestError
-from emergent_rpg.engine.narrative import ScenePlan
 from emergent_rpg.validation.validator import validate_event_preconditions, validate_state
 from emergent_rpg.world.demo import build_demo_world
 
