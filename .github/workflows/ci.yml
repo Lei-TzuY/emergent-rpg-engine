@@ -23,7 +23,7 @@ jobs:
           from pathlib import Path
           from zipfile import ZipFile
 
-          wheel = next(Path("/tmp/emrgent-wheel").glob("*.whl"))
+          wheel = next(Path("/tmp/emergent-wheel").glob("*.whl"))
           expected = {
               "emergent_rpg/web/static/index.html",
               "emergent_rpg/web/static/app.js",
