@@ -20,6 +20,21 @@ class PlayerMoved(DomainEvent):
     to_location: str
 
 
+class NPCMoved(DomainEvent):
+    type: Literal["npc_moved"] = "npc_moved"
+    npc_id: str
+    from_location: str
+    to_location: str
+
+
+class NPCGoalCompleted(DomainEvent):
+    type: Literal["npc_goal_completed"] = "npc_goal_completed"
+    npc_id: str
+    goal_id: str
+    method: Literal["reached_location", "inspected_item"]
+    evidence_id: str
+
+
 class ItemAcquired(DomainEvent):
     type: Literal["item_acquired"] = "item_acquired"
     item_id: str
@@ -89,6 +104,8 @@ class StatusApplied(DomainEvent):
 
 Event = Annotated[
     PlayerMoved
+    | NPCMoved
+    | NPCGoalCompleted
     | ItemAcquired
     | ItemDropped
     | CharacterDamaged

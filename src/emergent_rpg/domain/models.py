@@ -83,12 +83,31 @@ class PlayerCharacter(Entity):
     state: CharacterState
 
 
+class NPCGoal(BaseModel):
+    id: str
+    kind: Literal["reach_location", "investigate_item"]
+    target_id: str
+    priority: int = Field(default=0, ge=-100, le=100)
+
+
 class NPC(Entity):
     kind: Literal["npc"] = "npc"
     state: CharacterState
     goals: list[str] = Field(default_factory=list)
+    planning_goals: list[NPCGoal] = Field(default_factory=list)
+    completed_goal_ids: set[str] = Field(default_factory=set)
     relationships: dict[EntityId, int] = Field(default_factory=dict)
     knowledge: NPCKnowledge = Field(default_factory=NPCKnowledge)
+
+    @model_validator(mode="after")
+    def planning_goal_consistency(self) -> NPC:
+        goal_ids = [goal.id for goal in self.planning_goals]
+        if len(goal_ids) != len(set(goal_ids)):
+            raise ValueError("NPC planning goal ids must be unique")
+        unknown_completed = self.completed_goal_ids - set(goal_ids)
+        if unknown_completed:
+            raise ValueError("completed NPC goals must reference configured planning goals")
+        return self
 
 
 Character = Annotated[PlayerCharacter | NPC, Field(discriminator="kind")]

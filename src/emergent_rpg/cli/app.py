@@ -6,6 +6,7 @@ from typing import Annotated
 import typer
 
 from emergent_rpg.domain.models import NPC, WorldState
+from emergent_rpg.engine.mystery import MysteryGraph
 from emergent_rpg.engine.service import GameEngine
 from emergent_rpg.persistence.db import SQLiteStore
 from emergent_rpg.providers.errors import ProviderError
@@ -57,6 +58,7 @@ def _render_state(state: WorldState) -> str:
     ]
     exits = [state.locations[dest].name for dest in location.exits.values()]
     inventory = [state.items[item_id].name for item_id in player.state.inventory]
+    contradictions = MysteryGraph.contradictions(state, state.player_id)
     return "\n".join(
         [
             f"Location: {location.name}",
@@ -65,6 +67,10 @@ def _render_state(state: WorldState) -> str:
             f"NPCs: {', '.join(npcs) if npcs else 'none'}",
             f"Exits: {', '.join(exits)}",
             f"Inventory: {', '.join(inventory) if inventory else 'empty'}",
+            (
+                f"Mystery: {len(state.player_known_facts)} known facts | "
+                f"{len(contradictions)} contradiction(s)"
+            ),
         ]
     )
 
@@ -103,6 +109,25 @@ def history(
         marker = "OK" if turn.accepted else "REJECTED"
         typer.echo(f"T{turn.turn_number:03d} [{marker}] > {turn.raw_input}")
         typer.echo(f"  {turn.narration}")
+
+
+@app.command("npc-step")
+def npc_step(
+    session_id: Annotated[str | None, typer.Argument()] = None,
+    db: Annotated[Path, DB_OPTION] = DEFAULT_DB,
+    max_actions: Annotated[int, typer.Option(min=1, max=20)] = 3,
+) -> None:
+    engine = _engine(db)
+    resolved = _resolve_session(engine.store, session_id)
+    phase, state = engine.run_npc_phase(resolved, max_actions=max_actions)
+    typer.echo(
+        f"NPC phase: {phase.actions_executed} action(s), "
+        f"{len(phase.emitted_events)} event(s)."
+    )
+    for decision in phase.decisions:
+        marker = "OK" if decision.accepted else "REJECTED"
+        typer.echo(f"  [{marker}] {decision.npc_id}: {decision.intent.kind}")
+    typer.echo(_render_state(state))
 
 
 @app.command()

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from emergent_rpg.domain.models import (
     NPC,
+    NPCGoal,
     CharacterState,
     Fact,
     FactInferenceRule,
@@ -88,6 +89,14 @@ def build_demo_world() -> WorldState:
         faction="Relay Guild",
         state=CharacterState(current_location="yard", inventory=["item_flask"]),
         goals=["prove the generator did not cause the outage"],
+        planning_goals=[
+            NPCGoal(
+                id="lio_inspect_brass_key",
+                kind="investigate_item",
+                target_id="item_brass_key",
+                priority=80,
+            )
+        ],
         knowledge=NPCKnowledge(facts_known={"fact_generator_stable"}),
     )
     sera = NPC(
@@ -115,6 +124,14 @@ def build_demo_world() -> WorldState:
         faction="Survey Corps",
         state=CharacterState(current_location="bunkhouse"),
         goals=["leave Ashfall before nightfall"],
+        planning_goals=[
+            NPCGoal(
+                id="dax_reach_yard",
+                kind="reach_location",
+                target_id="yard",
+                priority=100,
+            )
+        ],
         knowledge=NPCKnowledge(
             facts_known={"fact_dax_generator_claim", "fact_ridge_lights"}
         ),

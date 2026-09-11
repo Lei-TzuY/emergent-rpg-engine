@@ -7,6 +7,8 @@ from emergent_rpg.domain.events import (
     Event,
     FactDiscovered,
     FactInferred,
+    NPCGoalCompleted,
+    NPCMoved,
     PlayerMoved,
     TimeAdvanced,
 )
@@ -99,6 +101,17 @@ def validate_state(state: WorldState, previous: WorldState | None = None) -> Val
 
     for entity_id, entity in state.entities.items():
         if isinstance(entity, NPC):
+            for goal in entity.planning_goals:
+                if goal.kind == "reach_location" and goal.target_id not in state.locations:
+                    report.add_error(
+                        "invalid_npc_goal",
+                        f"{entity_id} goal {goal.id} references missing location {goal.target_id}",
+                    )
+                if goal.kind == "investigate_item" and goal.target_id not in state.items:
+                    report.add_error(
+                        "invalid_npc_goal",
+                        f"{entity_id} goal {goal.id} references missing item {goal.target_id}",
+                    )
             missing = entity.knowledge.facts_known - state.facts.keys()
             if missing:
                 report.add_error(
@@ -136,6 +149,10 @@ def validate_event_preconditions(state: WorldState, event: Event) -> ValidationR
             report.add_error("nonexistent_entity", f"missing mover {event.entity_id}")
         if event.from_location not in state.locations or event.to_location not in state.locations:
             report.add_error("impossible_character_location", "move references missing location")
+    elif isinstance(event, NPCMoved):
+        _validate_npc_moved(state, event, report)
+    elif isinstance(event, NPCGoalCompleted):
+        _validate_npc_goal_completed(state, event, report)
     elif isinstance(event, CharacterHealed):
         if event.entity_id not in state.entities:
             report.add_error("nonexistent_entity", f"missing heal target {event.entity_id}")
@@ -148,6 +165,62 @@ def validate_event_preconditions(state: WorldState, event: Event) -> ValidationR
     elif isinstance(event, TimeAdvanced) and event.minutes <= 0:
         report.add_error("time_went_backward", "time advance must be positive")
     return report
+
+
+def _validate_npc_moved(
+    state: WorldState,
+    event: NPCMoved,
+    report: ValidationReport,
+) -> None:
+    npc = state.entities.get(event.npc_id)
+    if not isinstance(npc, NPC):
+        report.add_error("nonexistent_entity", f"missing NPC mover {event.npc_id}")
+        return
+    if event.from_location != npc.state.current_location:
+        report.add_error("impossible_character_location", "NPC move origin does not match state")
+        return
+    if event.to_location not in state.locations:
+        report.add_error("impossible_character_location", "NPC move references missing location")
+        return
+    location = state.locations[event.from_location]
+    if event.to_location not in location.exits.values():
+        report.add_error("impossible_character_location", "NPC destination is not a local exit")
+    if not npc.state.alive or not npc.state.conscious:
+        report.add_error("inactive_participant", f"{event.npc_id} cannot move")
+    if any(condition.incapacitating for condition in npc.state.status_conditions):
+        report.add_error("inactive_participant", f"{event.npc_id} movement is blocked")
+
+
+def _validate_npc_goal_completed(
+    state: WorldState,
+    event: NPCGoalCompleted,
+    report: ValidationReport,
+) -> None:
+    npc = state.entities.get(event.npc_id)
+    if not isinstance(npc, NPC):
+        report.add_error("nonexistent_entity", f"missing NPC {event.npc_id}")
+        return
+    goal = next((item for item in npc.planning_goals if item.id == event.goal_id), None)
+    if goal is None:
+        report.add_error("invalid_npc_goal", f"missing NPC goal {event.goal_id}")
+        return
+    if event.goal_id in npc.completed_goal_ids:
+        report.add_error("invalid_npc_goal", f"NPC goal {event.goal_id} is already complete")
+        return
+    if event.method == "reached_location":
+        if goal.kind != "reach_location" or goal.target_id != event.evidence_id:
+            report.add_error("invalid_npc_goal", "goal completion does not match reach goal")
+        elif npc.state.current_location != goal.target_id:
+            report.add_error("invalid_npc_goal", "NPC has not reached the goal location")
+    elif event.method == "inspected_item":
+        if goal.kind != "investigate_item" or goal.target_id != event.evidence_id:
+            report.add_error("invalid_npc_goal", "goal completion does not match inspection goal")
+            return
+        item = state.items.get(event.evidence_id)
+        if item is None:
+            report.add_error("invalid_npc_goal", "inspection evidence item does not exist")
+        elif item.owner_id != npc.id and item.location_id != npc.state.current_location:
+            report.add_error("invalid_npc_goal", "inspection evidence is not accessible to NPC")
 
 
 def _known_facts_for_observer(
