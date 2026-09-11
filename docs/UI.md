@@ -10,7 +10,7 @@ emergent-rpg-api --db emergent-rpg.db --host 127.0.0.1 --port 8000
 
 Open `http://127.0.0.1:8000/`; the root redirects to `/ui/`.
 
-The client has no Node/build step and no external assets. `index.html`, `app.js`, and `styles.css` are packaged inside `emergent_rpg.web.static` and served by FastAPI `StaticFiles`.
+The client has no Node/build step and no external assets. `index.html`, `app.js`, and `styles.css` live inside the `emergent_rpg` package tree and are served by FastAPI `StaticFiles`.
 
 ## Capabilities
 
@@ -49,13 +49,13 @@ The session id in `localStorage` is only a convenience pointer for a single-user
 
 ## Packaging evidence
 
-Hatch is configured with an explicit wheel `force-include` mapping for the static directory. CI now builds a wheel and opens the archive to assert these exact distribution paths exist:
+The Hatch wheel target already packages the complete `src/emergent_rpg` package tree, including the static directory. CI does not assume that this continues to work: it builds a standard wheel and opens the archive to assert these exact distribution paths exist:
 
 - `emergent_rpg/web/static/index.html`
 - `emergent_rpg/web/static/app.js`
 - `emergent_rpg/web/static/styles.css`
 
-This prevents a source-checkout-only UI from being mistaken for an installable feature.
+This prevents a source-checkout-only UI from being mistaken for an installable feature. An earlier redundant `force-include` experiment was rejected by the wheel builder because the same static files were already included through the package target; the final configuration keeps one inclusion path plus an executable archive check.
 
 ## Verification
 
