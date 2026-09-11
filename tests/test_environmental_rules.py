@@ -12,7 +12,7 @@ from emergent_rpg.domain.events import TimeAdvanced
 from emergent_rpg.domain.models import LocationCondition, TraversalEffect
 from emergent_rpg.engine.environment import EnvironmentalRules
 from emergent_rpg.engine.narrative import ScenePlan
-from emergent_rpg.engine.resolver import DeterministicResolver
+from emergent_rpg.engine.resolver import ActionResult, DeterministicResolver
 from emergent_rpg.engine.service import GameEngine
 from emergent_rpg.persistence.db import SQLiteStore
 from emergent_rpg.providers.base import NarrativeGenerator
@@ -26,8 +26,8 @@ class FailingNarrativeGenerator(NarrativeGenerator):
         raise ProviderRequestError("simulated outage during hazardous movement")
 
 
-def _time_advanced_minutes(result: object) -> int:
-    events = getattr(result, "emitted_events")
+def _time_advanced_minutes(result: ActionResult) -> int:
+    events = result.emitted_events
     time_events = [event for event in events if isinstance(event, TimeAdvanced)]
     assert len(time_events) == 1
     return time_events[0].minutes
