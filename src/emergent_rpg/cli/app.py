@@ -9,7 +9,12 @@ from emergent_rpg.domain.models import NPC, WorldState
 from emergent_rpg.engine.service import GameEngine
 from emergent_rpg.persistence.db import SQLiteStore
 from emergent_rpg.providers.errors import ProviderError
-from emergent_rpg.providers.factory import NarrativeProviderName, build_narrative_generator
+from emergent_rpg.providers.factory import (
+    ActionParserName,
+    NarrativeProviderName,
+    build_action_parser,
+    build_narrative_generator,
+)
 
 app = typer.Typer(help="Persistent canonical-state text-RPG engine demo.")
 DEFAULT_DB = Path("emergent-rpg.db")
@@ -18,14 +23,20 @@ PROVIDER_OPTION = typer.Option(
     "--provider",
     help="Narrative provider: scripted or openai-compatible.",
 )
+ACTION_PARSER_OPTION = typer.Option(
+    "--action-parser",
+    help="Action parser: deterministic or openai-compatible.",
+)
 
 
 def _engine(
     db: Path,
     provider: NarrativeProviderName = NarrativeProviderName.SCRIPTED,
+    action_parser: ActionParserName = ActionParserName.DETERMINISTIC,
 ) -> GameEngine:
     generator = build_narrative_generator(provider)
-    return GameEngine(SQLiteStore(db), generator=generator)
+    parser = build_action_parser(action_parser)
+    return GameEngine(SQLiteStore(db), generator=generator, parser=parser)
 
 
 def _resolve_session(store: SQLiteStore, session_id: str | None) -> str:
@@ -99,15 +110,20 @@ def play(
     session_id: Annotated[str | None, typer.Argument()] = None,
     db: Annotated[Path, DB_OPTION] = DEFAULT_DB,
     provider: Annotated[NarrativeProviderName, PROVIDER_OPTION] = NarrativeProviderName.SCRIPTED,
+    action_parser: Annotated[
+        ActionParserName, ACTION_PARSER_OPTION
+    ] = ActionParserName.DETERMINISTIC,
 ) -> None:
     try:
-        engine = _engine(db, provider)
+        engine = _engine(db, provider, action_parser)
     except ProviderError as exc:
-        raise typer.BadParameter(str(exc), param_hint="--provider") from exc
+        raise typer.BadParameter(str(exc)) from exc
 
     resolved = _resolve_session(engine.store, session_id)
     typer.echo(
-        f"Ashfall Relay — provider={provider.value}; type `help` for commands, `quit` to exit."
+        "Ashfall Relay — "
+        f"provider={provider.value}, action-parser={action_parser.value}; "
+        "type `help` for commands, `quit` to exit."
     )
     typer.echo(_render_state(engine.store.load_state(resolved)))
     while True:
@@ -122,13 +138,14 @@ def play(
         if text.casefold().strip() == "help":
             typer.echo(
                 "Commands: move <exit>, inspect <target>, talk <npc>, "
-                "take <item>, wait [minutes]"
+                "take <item>, wait [minutes]. With an LLM action parser, "
+                "natural phrasing is allowed."
             )
             continue
         try:
             result, narration, state = engine.process_text(resolved, text)
         except ProviderError as exc:
-            typer.echo(f"Narrative provider failed; turn was not committed: {exc}", err=True)
+            typer.echo(f"Provider failed; turn was not committed: {exc}", err=True)
             continue
         typer.echo(narration)
         if result.accepted:

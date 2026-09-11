@@ -3,9 +3,9 @@
 The project advances by coherent executable slices rather than placeholder subsystems.
 
 1. **Deterministic core** — canonical state, typed events, validation, replay, memory tiers, persistent CLI demo. **Complete.**
-2. **Real LLM provider** — provider implementation without leaking provider specifics into domain code; constrained `ScenePlan` input; offline transport tests; provider-failure atomicity. **Complete.**
-3. **Structured LLM action parsing** — constrained schema parsing with deterministic validation, retry/fallback behavior, and no direct state mutation. **Next.**
-4. **Mystery graph** — richer clue dependencies, inference, contradiction tracking, and reveal gates.
+2. **Real LLM provider** — replaceable OpenAI-compatible narration, constrained `ScenePlan` input, offline transport tests, and provider-failure atomicity. **Complete.**
+3. **Structured LLM action parsing** — strict typed action JSON, visible-state-only prompt surface, deterministic fallback, and resolver-enforced legality. **Complete.**
+4. **Mystery graph** — richer clue dependencies, inference, contradiction tracking, and reveal gates. **Next.**
 5. **NPC autonomous planning** — goals, bounded plans, and knowledge-constrained action selection.
 6. **World simulation between player turns** — scheduled events and off-screen consequences.
 7. **Vector/embedding retrieval** — optional semantic retrieval alongside deterministic ranking.
@@ -15,16 +15,21 @@ The project advances by coherent executable slices rather than placeholder subsy
 11. **Model routing / cost controls** — per-stage provider selection, budgets, and caching.
 12. **Evaluation harness for 1,000+ turn consistency** — repeatable long-run continuity metrics and adversarial scenarios.
 
-## Promotion gate for Milestone 3
+## Milestone 3 invariant
 
-Structured LLM parsing should not begin by giving a model mutation authority. The acceptance boundary is:
+The parser never receives mutation authority:
 
 ```text
-freeform text
-→ provider proposes typed PlayerAction JSON
-→ schema validation
+freeform player text
+→ visible interaction surface only
+→ provider proposes strict PlayerAction JSON
+→ Pydantic schema validation (extra fields forbidden)
 → deterministic resolver
-→ ordinary event/validator pipeline
+→ ordinary event / validation / commit pipeline
 ```
 
-Malformed, unknown, or semantically impossible model output must fall back or fail structurally without corrupting canonical state.
+Provider request/response failures fall back to the deterministic command parser. A syntactically valid but impossible model-proposed action is rejected by the resolver without changing canonical state or appending material events.
+
+## Promotion gate for Milestone 4
+
+The mystery layer should model clue dependencies and inference explicitly without turning narration into truth. New derived knowledge must have a reproducible provenance path from canonical facts/events, and NPC inference must remain epistemically isolated from player knowledge and other NPCs.

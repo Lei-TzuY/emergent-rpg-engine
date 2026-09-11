@@ -6,10 +6,12 @@ from typing import Protocol, cast
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
+from emergent_rpg.domain.actions import PlayerAction, parse_action
+from emergent_rpg.domain.models import NPC, WorldState
 from emergent_rpg.engine.narrative import ScenePlan
-from emergent_rpg.providers.base import NarrativeGenerator
+from emergent_rpg.providers.base import ActionParser, NarrativeGenerator
 from emergent_rpg.providers.errors import ProviderRequestError, ProviderResponseError
 
 MAX_RESPONSE_BYTES = 1_000_000
@@ -20,6 +22,18 @@ world events support. You may use only the explicitly allowed information. Never
 changes, inventory transfers, locations, injuries, knowledge, relationships, or time changes.
 Never reveal or infer facts identified as forbidden. If the plan is sparse, stay concise instead
 of filling gaps with new world facts. Return prose only.
+"""
+
+ACTION_SYSTEM_PROMPT = """You are a constrained action parser for a persistent RPG engine.
+Convert the player's text into exactly one JSON object and nothing else. You may choose only:
+{"kind":"move","destination":"..."}
+{"kind":"inspect","target":"..."}
+{"kind":"talk","target":"..."}
+{"kind":"take","target":"..."}
+{"kind":"wait","minutes":10}
+{"kind":"freeform","text":"..."}
+Use only the visible interaction surface supplied by the engine. Never claim that an action is
+possible; the deterministic resolver decides legality after parsing. Do not add extra fields.
 """
 
 
@@ -79,7 +93,7 @@ class UrllibJsonTransport:
         return cast(dict[str, object], parsed)
 
 
-class OpenAICompatibleNarrativeGenerator(NarrativeGenerator):
+class OpenAICompatibleClient:
     def __init__(
         self,
         config: OpenAICompatibleConfig,
@@ -88,14 +102,32 @@ class OpenAICompatibleNarrativeGenerator(NarrativeGenerator):
         self.config = config
         self.transport = transport or UrllibJsonTransport()
 
-    def generate(self, scene_plan: ScenePlan) -> str:
+    def complete(
+        self,
+        system_prompt: str,
+        user_payload: Mapping[str, object],
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> str:
         response = self.transport.post_json(
             f"{self.config.base_url}/chat/completions",
             self._headers(),
-            self._payload(scene_plan),
+            {
+                "model": self.config.model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {
+                        "role": "user",
+                        "content": json.dumps(user_payload, ensure_ascii=False, sort_keys=True),
+                    },
+                ],
+                "temperature": self.config.temperature if temperature is None else temperature,
+                "max_tokens": self.config.max_tokens if max_tokens is None else max_tokens,
+            },
             self.config.timeout_seconds,
         )
-        return self._extract_text(response)
+        return _extract_message_text(response)
 
     def _headers(self) -> dict[str, str]:
         headers = {
@@ -107,7 +139,17 @@ class OpenAICompatibleNarrativeGenerator(NarrativeGenerator):
             headers["Authorization"] = f"Bearer {self.config.api_key}"
         return headers
 
-    def _payload(self, scene_plan: ScenePlan) -> dict[str, object]:
+
+class OpenAICompatibleNarrativeGenerator(NarrativeGenerator):
+    def __init__(
+        self,
+        config: OpenAICompatibleConfig,
+        transport: JsonTransport | None = None,
+    ) -> None:
+        self.client = OpenAICompatibleClient(config, transport)
+        self.config = config
+
+    def generate(self, scene_plan: ScenePlan) -> str:
         provider_scene: dict[str, object] = {
             "objective": scene_plan.objective,
             "participating_entities": scene_plan.participating_entities,
@@ -117,34 +159,88 @@ class OpenAICompatibleNarrativeGenerator(NarrativeGenerator):
             "observations": scene_plan.observations,
             "suggested_dramatic_beat": scene_plan.suggested_dramatic_beat,
         }
-        return {
-            "model": self.config.model,
-            "messages": [
-                {"role": "system", "content": NARRATION_SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": json.dumps(provider_scene, ensure_ascii=False, sort_keys=True),
-                },
-            ],
-            "temperature": self.config.temperature,
-            "max_tokens": self.config.max_tokens,
-        }
+        return self.client.complete(NARRATION_SYSTEM_PROMPT, provider_scene)
 
-    @staticmethod
-    def _extract_text(response: Mapping[str, object]) -> str:
-        choices_value = response.get("choices")
-        if not isinstance(choices_value, list) or not choices_value:
-            raise ProviderResponseError("provider response has no choices")
-        choices = cast(list[object], choices_value)
-        first = choices[0]
-        if not isinstance(first, dict):
-            raise ProviderResponseError("provider choice is not an object")
-        choice = cast(dict[str, object], first)
-        message_value = choice.get("message")
-        if not isinstance(message_value, dict):
-            raise ProviderResponseError("provider choice has no message object")
-        message = cast(dict[str, object], message_value)
-        content = message.get("content")
-        if not isinstance(content, str) or not content.strip():
-            raise ProviderResponseError("provider message content is empty")
-        return content.strip()
+
+class OpenAICompatibleActionParser(ActionParser):
+    def __init__(
+        self,
+        config: OpenAICompatibleConfig,
+        transport: JsonTransport | None = None,
+    ) -> None:
+        self.client = OpenAICompatibleClient(config, transport)
+
+    def parse(self, text: str, state: WorldState) -> PlayerAction:
+        content = self.client.complete(
+            ACTION_SYSTEM_PROMPT,
+            {
+                "player_text": text,
+                "visible_state": _visible_action_surface(state),
+            },
+            temperature=0.0,
+            max_tokens=200,
+        )
+        try:
+            decoded: object = json.loads(_strip_code_fence(content))
+            return parse_action(decoded)
+        except (json.JSONDecodeError, ValidationError) as exc:
+            raise ProviderResponseError("provider returned invalid action JSON") from exc
+
+
+def _visible_action_surface(state: WorldState) -> dict[str, object]:
+    player = state.player()
+    location = state.locations[player.state.current_location]
+    visible_items = sorted(
+        item.name for item in state.items.values() if item.location_id == location.id
+    )
+    visible_npcs = sorted(
+        entity.name
+        for entity in state.entities.values()
+        if isinstance(entity, NPC)
+        and entity.state.current_location == location.id
+        and entity.state.alive
+        and entity.state.conscious
+    )
+    exits = sorted(
+        {exit_name for exit_name in location.exits}
+        | {state.locations[destination].name for destination in location.exits.values()}
+    )
+    inventory = sorted(state.items[item_id].name for item_id in player.state.inventory)
+    movement_blocked = any(status.incapacitating for status in player.state.status_conditions)
+    return {
+        "location": location.name,
+        "exits": exits,
+        "visible_items": visible_items,
+        "visible_npcs": visible_npcs,
+        "inventory": inventory,
+        "movement_blocked": movement_blocked,
+    }
+
+
+def _strip_code_fence(content: str) -> str:
+    stripped = content.strip()
+    if not stripped.startswith("```"):
+        return stripped
+    lines = stripped.splitlines()
+    if len(lines) < 3 or lines[-1].strip() != "```":
+        return stripped
+    return "\n".join(lines[1:-1]).strip()
+
+
+def _extract_message_text(response: Mapping[str, object]) -> str:
+    choices_value = response.get("choices")
+    if not isinstance(choices_value, list) or not choices_value:
+        raise ProviderResponseError("provider response has no choices")
+    choices = cast(list[object], choices_value)
+    first = choices[0]
+    if not isinstance(first, dict):
+        raise ProviderResponseError("provider choice is not an object")
+    choice = cast(dict[str, object], first)
+    message_value = choice.get("message")
+    if not isinstance(message_value, dict):
+        raise ProviderResponseError("provider choice has no message object")
+    message = cast(dict[str, object], message_value)
+    content = message.get("content")
+    if not isinstance(content, str) or not content.strip():
+        raise ProviderResponseError("provider message content is empty")
+    return content.strip()

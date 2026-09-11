@@ -77,6 +77,14 @@ export EMERGENT_RPG_LLM_API_KEY="..."
 emergent-rpg play --provider openai-compatible
 ```
 
+The same endpoint can also parse natural-language player actions into strict typed commands:
+
+```bash
+emergent-rpg play --action-parser openai-compatible
+# Or use the endpoint for both stages:
+emergent-rpg play --action-parser openai-compatible --provider openai-compatible
+```
+
 Optional controls:
 
 ```text
@@ -85,9 +93,11 @@ EMERGENT_RPG_LLM_TEMPERATURE   default 0.7
 EMERGENT_RPG_LLM_MAX_TOKENS    default 500
 ```
 
-Provider credentials are read from the environment rather than command-line flags. The provider receives a constrained `ScenePlan`, not mutable canonical state. Facts known only by an NPC are not automatically made available to player-facing narration.
+Provider credentials are read from the environment rather than command-line flags. The narrative provider receives a constrained `ScenePlan`, not mutable canonical state. Facts known only by an NPC are not automatically made available to player-facing narration.
 
-If an external provider request fails or returns malformed output, the accepted candidate state is **not committed**. The player can retry without a half-applied event stream.
+The LLM action parser receives only the player's current interaction surface: current location name, exits, visible items, co-located conscious NPC names, inventory, and whether movement is blocked. Canonical facts, hidden clues, NPC beliefs, goals, and private NPC knowledge are deliberately omitted. Its JSON output is validated against strict Pydantic action schemas with extra fields forbidden, then passed through the ordinary deterministic resolver.
+
+If action parsing fails, the engine logs the provider failure and falls back to the deterministic command parser. If narrative generation fails, the accepted candidate state is **not committed**. In either case, a provider cannot directly mutate canonical state.
 
 ## Demo world: Ashfall Relay
 
@@ -105,7 +115,7 @@ CI runs all three checks on Python 3.12. Provider tests inject an in-memory tran
 
 ## Current limitations
 
-Freeform natural-language action parsing is still deterministic/fallback-only. Structured LLM action parsing, autonomous NPC planning, world simulation between turns, vector retrieval, web APIs, web UI, richer combat/stat systems, provider routing, and cost controls are future work.
+Autonomous NPC planning, explicit mystery/inference graphs, world simulation between turns, vector retrieval, web APIs, web UI, richer combat/stat systems, provider routing, and cost controls are future work.
 
 The OpenAI-compatible provider currently targets the common `/chat/completions` JSON shape and intentionally supports text responses only. Live endpoint interoperability depends on the selected server/model and is not claimed by offline CI.
 

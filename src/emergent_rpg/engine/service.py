@@ -10,7 +10,7 @@ from emergent_rpg.engine.reducer import apply_event, replay
 from emergent_rpg.engine.resolver import ActionResult, DeterministicResolver
 from emergent_rpg.memory.models import Episode
 from emergent_rpg.persistence.db import SQLiteStore
-from emergent_rpg.providers.base import NarrativeGenerator
+from emergent_rpg.providers.base import ActionParser, NarrativeGenerator
 from emergent_rpg.providers.scripted import DeterministicActionParser, ScriptedNarrativeGenerator
 from emergent_rpg.validation.validator import validate_event_preconditions, validate_state
 from emergent_rpg.world.demo import build_demo_world
@@ -25,9 +25,10 @@ class GameEngine:
         self,
         store: SQLiteStore,
         generator: NarrativeGenerator | None = None,
+        parser: ActionParser | None = None,
     ) -> None:
         self.store = store
-        self.parser = DeterministicActionParser()
+        self.parser = parser or DeterministicActionParser()
         self.resolver = DeterministicResolver()
         self.planner = DeterministicNarrativePlanner()
         self.generator = generator or ScriptedNarrativeGenerator()
