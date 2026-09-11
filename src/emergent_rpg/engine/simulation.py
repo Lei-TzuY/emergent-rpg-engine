@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from emergent_rpg.domain.models import WorldState
@@ -10,9 +12,19 @@ class SimulationSchedule(BaseModel):
     backlog_remaining: bool = False
 
 
+class DueWorldEvent(BaseModel):
+    kind: Literal["activate", "expire"]
+    event_id: str
+    due_absolute_minute: int = Field(ge=0)
+
+
 class WorldEventSchedule(BaseModel):
-    due_event_ids: list[str] = Field(default_factory=list)
+    due_events: list[DueWorldEvent] = Field(default_factory=list)
     backlog_remaining: bool = False
+
+    @property
+    def due_event_ids(self) -> list[str]:
+        return [event.event_id for event in self.due_events]
 
 
 class DeterministicSimulationScheduler:
@@ -33,14 +45,24 @@ class DeterministicSimulationScheduler:
 class DeterministicWorldEventScheduler:
     def due_events(self, state: WorldState) -> WorldEventSchedule:
         now = state.clock.absolute_minutes
-        pending = sorted(
-            state.scheduled_location_conditions,
-            key=lambda event: (event.due_absolute_minute, event.id),
+        pending: list[tuple[int, int, str, Literal["activate", "expire"]]] = []
+        for event in state.scheduled_location_conditions:
+            pending.append((event.due_absolute_minute, 0, event.id, "activate"))
+            expiry_minute = event.expiry_absolute_minute
+            if expiry_minute is not None:
+                pending.append((expiry_minute, 1, event.expiry_event_id, "expire"))
+        pending.extend(
+            (event.due_absolute_minute, 1, event.id, "expire")
+            for event in state.scheduled_location_condition_expirations
         )
-        all_due = [event for event in pending if event.due_absolute_minute <= now]
+        pending.sort()
+        all_due = [item for item in pending if item[0] <= now]
         limit = state.simulation.max_scheduled_events_per_turn
         selected = all_due[:limit]
         return WorldEventSchedule(
-            due_event_ids=[event.id for event in selected],
+            due_events=[
+                DueWorldEvent(kind=kind, event_id=event_id, due_absolute_minute=minute)
+                for minute, _, event_id, kind in selected
+            ],
             backlog_remaining=len(all_due) > len(selected),
         )

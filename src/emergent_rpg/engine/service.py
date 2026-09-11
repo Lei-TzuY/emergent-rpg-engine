@@ -7,6 +7,7 @@ from emergent_rpg.domain.actions import PlayerAction
 from emergent_rpg.domain.events import (
     Event,
     ScheduledLocationConditionApplied,
+    ScheduledLocationConditionExpired,
     SimulationCycleProcessed,
 )
 from emergent_rpg.domain.models import GameSession, Turn, WorldState
@@ -126,16 +127,17 @@ class GameEngine:
         if not scene_report.valid:
             raise TransitionRejected(str(scene_report.issues))
 
-        # Narrative generation happens before simulation and before the transactional commit.
-        # A provider outage therefore cannot leave either the player's action or off-screen
-        # consequences half-applied.
         narration = self.generator.generate(plan)
 
         candidate, simulation_events = self._run_due_simulation(
             candidate,
             turn_number=candidate.turn_number,
         )
-        final_report = validate_state(candidate, previous=before)
+        final_report = validate_state(
+            candidate,
+            previous=before,
+            transition_events=simulation_events,
+        )
         if not final_report.valid:
             raise TransitionRejected(str(final_report.issues))
 
@@ -256,35 +258,55 @@ class GameEngine:
     ) -> tuple[WorldState, list[Event]]:
         npc_schedule = self.simulation_scheduler.due_cycles(state)
         world_schedule = self.world_event_scheduler.due_events(state)
-        if not npc_schedule.due_absolute_minutes and not world_schedule.due_event_ids:
+        if not npc_schedule.due_absolute_minutes and not world_schedule.due_events:
             return state, []
 
-        scheduled_by_id = {
-            item.id: item for item in state.scheduled_location_conditions
+        expiry_targets: dict[str, tuple[str, str]] = {
+            item.id: (item.location_id, item.condition_code)
+            for item in state.scheduled_location_condition_expirations
         }
+        for activation in state.scheduled_location_conditions:
+            if activation.expiry_absolute_minute is not None:
+                expiry_targets[activation.expiry_event_id] = (
+                    activation.location_id,
+                    activation.condition.code,
+                )
+
         timeline: list[tuple[int, int, str, str]] = []
-        for scheduled_event_id in world_schedule.due_event_ids:
-            scheduled = scheduled_by_id[scheduled_event_id]
+        for due_event in world_schedule.due_events:
+            priority = 0 if due_event.kind == "activate" else 1
             timeline.append(
                 (
-                    scheduled.due_absolute_minute,
-                    0,
-                    "world",
-                    scheduled_event_id,
+                    due_event.due_absolute_minute,
+                    priority,
+                    due_event.kind,
+                    due_event.event_id,
                 )
             )
         for scheduled_minute in npc_schedule.due_absolute_minutes:
-            timeline.append((scheduled_minute, 1, "npc", ""))
+            timeline.append((scheduled_minute, 2, "npc", ""))
         timeline.sort()
 
         candidate = state.model_copy(deep=True)
         emitted_events: list[Event] = []
         for scheduled_minute, _, kind, scheduled_event_id in timeline:
-            if kind == "world":
+            if kind == "activate":
                 event = ScheduledLocationConditionApplied(
                     turn_number=turn_number,
                     scheduled_event_id=scheduled_event_id,
                     scheduled_absolute_minute=scheduled_minute,
+                )
+                candidate = self._apply_validated_event(candidate, event)
+                emitted_events.append(event)
+                continue
+            if kind == "expire":
+                location_id, condition_code = expiry_targets[scheduled_event_id]
+                event = ScheduledLocationConditionExpired(
+                    turn_number=turn_number,
+                    scheduled_event_id=scheduled_event_id,
+                    scheduled_absolute_minute=scheduled_minute,
+                    location_id=location_id,
+                    condition_code=condition_code,
                 )
                 candidate = self._apply_validated_event(candidate, event)
                 emitted_events.append(event)

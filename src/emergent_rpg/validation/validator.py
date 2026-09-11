@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from typing import Literal
 
 from emergent_rpg.domain.events import (
     CharacterHealed,
@@ -11,6 +12,7 @@ from emergent_rpg.domain.events import (
     NPCMoved,
     PlayerMoved,
     ScheduledLocationConditionApplied,
+    ScheduledLocationConditionExpired,
     SimulationCycleProcessed,
     TimeAdvanced,
 )
@@ -18,7 +20,11 @@ from emergent_rpg.domain.models import NPC, WorldState
 from emergent_rpg.validation.models import ValidationReport
 
 
-def validate_state(state: WorldState, previous: WorldState | None = None) -> ValidationReport:
+def validate_state(
+    state: WorldState,
+    previous: WorldState | None = None,
+    transition_events: list[Event] | None = None,
+) -> ValidationReport:
     report = ValidationReport()
 
     if state.player_id not in state.entities:
@@ -140,16 +146,26 @@ def validate_state(state: WorldState, previous: WorldState | None = None) -> Val
             < previous.simulation.next_due_absolute_minute
         ):
             report.add_error("simulation_went_backward", "simulation cursor decreased")
+        authorized_expirations = {
+            (event.location_id, event.condition_code)
+            for event in transition_events or []
+            if isinstance(event, ScheduledLocationConditionExpired)
+        }
         for location_id, old_location in previous.locations.items():
             if location_id in state.locations:
                 removed_conditions = (
                     old_location.active_conditions.keys()
                     - state.locations[location_id].active_conditions.keys()
                 )
-                if removed_conditions:
+                unauthorized = {
+                    code
+                    for code in removed_conditions
+                    if (location_id, code) not in authorized_expirations
+                }
+                if unauthorized:
                     report.add_error(
                         "environment_went_backward",
-                        f"{location_id} lost conditions: {sorted(removed_conditions)}",
+                        f"{location_id} lost conditions without expiry: {sorted(unauthorized)}",
                     )
         for entity_id, old_entity in previous.entities.items():
             if entity_id in state.entities:
@@ -198,18 +214,41 @@ def validate_event_preconditions(state: WorldState, event: Event) -> ValidationR
             )
     elif isinstance(event, ScheduledLocationConditionApplied):
         _validate_scheduled_location_condition(state, event, report)
+    elif isinstance(event, ScheduledLocationConditionExpired):
+        _validate_scheduled_location_condition_expiry(state, event, report)
     return report
 
 
-def _validate_scheduled_world_state(
+def _pending_world_events(
     state: WorldState,
-    report: ValidationReport,
-) -> None:
-    event_ids = [event.id for event in state.scheduled_location_conditions]
-    if len(event_ids) != len(set(event_ids)):
+) -> list[tuple[int, int, str, Literal["activate", "expire"]]]:
+    pending: list[tuple[int, int, str, Literal["activate", "expire"]]] = []
+    for event in state.scheduled_location_conditions:
+        pending.append((event.due_absolute_minute, 0, event.id, "activate"))
+        expiry_minute = event.expiry_absolute_minute
+        if expiry_minute is not None:
+            pending.append((expiry_minute, 1, event.expiry_event_id, "expire"))
+    pending.extend(
+        (event.due_absolute_minute, 1, event.id, "expire")
+        for event in state.scheduled_location_condition_expirations
+    )
+    pending.sort()
+    return pending
+
+
+def _validate_scheduled_world_state(state: WorldState, report: ValidationReport) -> None:
+    activation_ids = [event.id for event in state.scheduled_location_conditions]
+    derived_expiry_ids = [
+        event.expiry_event_id
+        for event in state.scheduled_location_conditions
+        if event.expiry_absolute_minute is not None
+    ]
+    expiry_ids = [event.id for event in state.scheduled_location_condition_expirations]
+    all_ids = [*activation_ids, *derived_expiry_ids, *expiry_ids]
+    if len(all_ids) != len(set(all_ids)):
         report.add_error("invalid_scheduled_world_event", "scheduled event ids must be unique")
 
-    targets: list[tuple[str, str]] = []
+    activation_targets: list[tuple[str, str]] = []
     for event in state.scheduled_location_conditions:
         if event.location_id not in state.locations:
             report.add_error(
@@ -218,18 +257,45 @@ def _validate_scheduled_world_state(
             )
             continue
         target = (event.location_id, event.condition.code)
-        targets.append(target)
+        activation_targets.append(target)
         if event.condition.code in state.locations[event.location_id].active_conditions:
             report.add_error(
                 "invalid_scheduled_world_event",
                 f"{event.id} targets an already-active location condition",
             )
 
-    duplicate_targets = [target for target, count in Counter(targets).items() if count > 1]
+    duplicate_targets = [
+        target for target, count in Counter(activation_targets).items() if count > 1
+    ]
     if duplicate_targets:
         report.add_error(
             "invalid_scheduled_world_event",
             f"scheduled condition targets must be unique: {sorted(duplicate_targets)}",
+        )
+
+    expiry_targets: list[tuple[str, str]] = []
+    for event in state.scheduled_location_condition_expirations:
+        if event.location_id not in state.locations:
+            report.add_error(
+                "invalid_scheduled_world_event",
+                f"{event.id} references missing location {event.location_id}",
+            )
+            continue
+        target = (event.location_id, event.condition_code)
+        expiry_targets.append(target)
+        if event.condition_code not in state.locations[event.location_id].active_conditions:
+            report.add_error(
+                "invalid_scheduled_world_event",
+                f"{event.id} expiry target is not active",
+            )
+
+    duplicate_expiry_targets = [
+        target for target, count in Counter(expiry_targets).items() if count > 1
+    ]
+    if duplicate_expiry_targets:
+        report.add_error(
+            "invalid_scheduled_world_event",
+            f"scheduled expiry targets must be unique: {sorted(duplicate_expiry_targets)}",
         )
 
     for location_id, location in state.locations.items():
@@ -241,39 +307,58 @@ def _validate_scheduled_world_state(
                 )
 
 
+def _validate_expected_world_event(
+    state: WorldState,
+    event_id: str,
+    minute: int,
+    kind: Literal["activate", "expire"],
+    report: ValidationReport,
+) -> bool:
+    pending = _pending_world_events(state)
+    if not pending:
+        report.add_error(
+            "invalid_scheduled_world_event",
+            f"scheduled event {event_id} is not pending",
+        )
+        return False
+    expected_minute, _, expected_id, expected_kind = pending[0]
+    if (event_id, kind) != (expected_id, expected_kind):
+        report.add_error(
+            "invalid_scheduled_world_event",
+            f"scheduled event expected {expected_id} ({expected_kind}) before {event_id}",
+        )
+        return False
+    if minute != expected_minute:
+        report.add_error(
+            "invalid_scheduled_world_event",
+            f"scheduled event {expected_id} minute does not match canonical schedule",
+        )
+    if expected_minute > state.clock.absolute_minutes:
+        report.add_error(
+            "invalid_scheduled_world_event",
+            f"scheduled event {expected_id} cannot run before its due world time",
+        )
+    return report.valid
+
+
 def _validate_scheduled_location_condition(
     state: WorldState,
     event: ScheduledLocationConditionApplied,
     report: ValidationReport,
 ) -> None:
-    pending = sorted(
-        state.scheduled_location_conditions,
-        key=lambda item: (item.due_absolute_minute, item.id),
+    if not _validate_expected_world_event(
+        state,
+        event.scheduled_event_id,
+        event.scheduled_absolute_minute,
+        "activate",
+        report,
+    ):
+        return
+    expected = next(
+        item
+        for item in state.scheduled_location_conditions
+        if item.id == event.scheduled_event_id
     )
-    if not pending:
-        report.add_error(
-            "invalid_scheduled_world_event",
-            f"scheduled event {event.scheduled_event_id} is not pending",
-        )
-        return
-
-    expected = pending[0]
-    if event.scheduled_event_id != expected.id:
-        report.add_error(
-            "invalid_scheduled_world_event",
-            f"scheduled event expected {expected.id} before {event.scheduled_event_id}",
-        )
-        return
-    if event.scheduled_absolute_minute != expected.due_absolute_minute:
-        report.add_error(
-            "invalid_scheduled_world_event",
-            f"scheduled event {expected.id} minute does not match canonical schedule",
-        )
-    if expected.due_absolute_minute > state.clock.absolute_minutes:
-        report.add_error(
-            "invalid_scheduled_world_event",
-            f"scheduled event {expected.id} cannot run before its due world time",
-        )
     location = state.locations.get(expected.location_id)
     if location is None:
         report.add_error(
@@ -287,11 +372,51 @@ def _validate_scheduled_location_condition(
         )
 
 
-def _validate_npc_moved(
+def _validate_scheduled_location_condition_expiry(
     state: WorldState,
-    event: NPCMoved,
+    event: ScheduledLocationConditionExpired,
     report: ValidationReport,
 ) -> None:
+    if not _validate_expected_world_event(
+        state,
+        event.scheduled_event_id,
+        event.scheduled_absolute_minute,
+        "expire",
+        report,
+    ):
+        return
+    scheduled = next(
+        (
+            item
+            for item in state.scheduled_location_condition_expirations
+            if item.id == event.scheduled_event_id
+        ),
+        None,
+    )
+    if scheduled is None:
+        report.add_error(
+            "invalid_scheduled_world_event",
+            f"expiry {event.scheduled_event_id} has not been materialized",
+        )
+        return
+    if (event.location_id, event.condition_code) != (
+        scheduled.location_id,
+        scheduled.condition_code,
+    ):
+        report.add_error(
+            "invalid_scheduled_world_event",
+            "expiry target does not match canonical schedule",
+        )
+        return
+    location = state.locations.get(scheduled.location_id)
+    if location is None or scheduled.condition_code not in location.active_conditions:
+        report.add_error(
+            "invalid_scheduled_world_event",
+            f"expiry {scheduled.id} target is not active",
+        )
+
+
+def _validate_npc_moved(state: WorldState, event: NPCMoved, report: ValidationReport) -> None:
     npc = state.entities.get(event.npc_id)
     if not isinstance(npc, NPC):
         report.add_error("nonexistent_entity", f"missing NPC mover {event.npc_id}")

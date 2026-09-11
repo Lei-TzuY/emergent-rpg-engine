@@ -137,6 +137,24 @@ class ScheduledLocationCondition(BaseModel):
     due_absolute_minute: int = Field(ge=0)
     location_id: LocationId
     condition: LocationCondition
+    expires_after_minutes: int | None = Field(default=20, ge=1, le=24 * 60)
+
+    @property
+    def expiry_event_id(self) -> str:
+        return f"{self.id}:expiry"
+
+    @property
+    def expiry_absolute_minute(self) -> int | None:
+        if self.expires_after_minutes is None:
+            return None
+        return self.due_absolute_minute + self.expires_after_minutes
+
+
+class ScheduledLocationConditionExpiry(BaseModel):
+    id: str = Field(min_length=1)
+    due_absolute_minute: int = Field(ge=0)
+    location_id: LocationId
+    condition_code: str = Field(min_length=1)
 
 
 class Item(BaseModel):
@@ -194,6 +212,9 @@ class WorldState(BaseModel):
     inference_rules: dict[str, FactInferenceRule] = Field(default_factory=dict)
     simulation: SimulationState = Field(default_factory=SimulationState)
     scheduled_location_conditions: list[ScheduledLocationCondition] = Field(default_factory=list)
+    scheduled_location_condition_expirations: list[ScheduledLocationConditionExpiry] = Field(
+        default_factory=list
+    )
     player_known_facts: set[FactId] = Field(default_factory=set)
     factions: set[str] = Field(default_factory=set)
 

@@ -14,11 +14,17 @@ from emergent_rpg.domain.events import (
     PlayerMoved,
     RelationshipChanged,
     ScheduledLocationConditionApplied,
+    ScheduledLocationConditionExpired,
     SimulationCycleProcessed,
     StatusApplied,
     TimeAdvanced,
 )
-from emergent_rpg.domain.models import NPC, StatusCondition, WorldState
+from emergent_rpg.domain.models import (
+    NPC,
+    ScheduledLocationConditionExpiry,
+    StatusCondition,
+    WorldState,
+)
 
 
 class ReductionError(ValueError):
@@ -111,7 +117,36 @@ def apply_event(state: WorldState, event: Event) -> WorldState:
         location.active_conditions[scheduled.condition.code] = scheduled.condition.model_copy(
             deep=True
         )
+        expiry_minute = scheduled.expiry_absolute_minute
+        if expiry_minute is not None:
+            new_state.scheduled_location_condition_expirations.append(
+                ScheduledLocationConditionExpiry(
+                    id=scheduled.expiry_event_id,
+                    due_absolute_minute=expiry_minute,
+                    location_id=scheduled.location_id,
+                    condition_code=scheduled.condition.code,
+                )
+            )
         del new_state.scheduled_location_conditions[index]
+    elif isinstance(event, ScheduledLocationConditionExpired):
+        index = next(
+            (
+                idx
+                for idx, scheduled in enumerate(
+                    new_state.scheduled_location_condition_expirations
+                )
+                if scheduled.id == event.scheduled_event_id
+            ),
+            None,
+        )
+        if index is None:
+            raise ReductionError("scheduled location condition expiry no longer exists")
+        scheduled = new_state.scheduled_location_condition_expirations[index]
+        location = new_state.locations[scheduled.location_id]
+        if scheduled.condition_code not in location.active_conditions:
+            raise ReductionError("scheduled location condition is not active")
+        del location.active_conditions[scheduled.condition_code]
+        del new_state.scheduled_location_condition_expirations[index]
     elif isinstance(event, StatusApplied):
         char = new_state.entities[event.entity_id].state
         if all(status.code != event.code for status in char.status_conditions):
