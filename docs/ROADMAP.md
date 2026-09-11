@@ -16,7 +16,8 @@ The project advances by coherent executable slices rather than placeholder subsy
 12. **Evaluation harness for 1,000+ turn consistency** — deterministic seeded/adversarial workload, periodic replay/invariant checkpoints, machine-readable reports, and a real 1,000-accepted-turn CI gate. **Complete.**
 13. **Scheduled world events / environmental simulation** — canonical future-event queue, deterministic due-time execution, replayable schedule consumption, bounded catch-up, API/UI-visible active location conditions, and atomic integration with NPC simulation. **Complete.**
 14. **Environmental rules / traversal hazards** — declarative active-condition traversal effects, deterministic additive movement cost, ordinary event emission, player-visible explanation, and long-run replay evidence. **Complete.**
-15. **Environmental condition lifecycle / expiry** — canonical scheduled expiration, typed removal events, replayable lifecycle transitions, bounded due-time processing, and restoration of baseline rules after expiry. **Next.**
+15. **Environmental condition lifecycle / expiry** — canonical lifespans, typed validated expiry events, explicit replayable expiry queues, bounded lifecycle processing, provenance-aware removal, and restoration of baseline rules. **Complete.**
+16. **Environmental route access / closures** — data-driven blocked exits, deterministic player/NPC enforcement, planner-visible route filtering, player-visible closure explanation, and automatic route restoration after expiry. **Next.**
 
 ## Milestone 3 invariant
 
@@ -217,8 +218,33 @@ The scheduled Ashfall Yard squall carries `extra_minutes=5`, so movement from th
 
 The first fully green M14 candidate passed 90 pytest tests plus the seeded 1,000-accepted-turn evaluation. That run produced 1,058 submissions, 1,000 accepted turns, 58 rejections, 2,414 events, 1,000 episodes, and final canonical clock minute 5,086. Replay equality, state validity, monotonic clock/knowledge/event log, item ownership, and event-id uniqueness all remained true with `failures=[]`. These numbers are correctness evidence, not a throughput benchmark.
 
-## Promotion gate for Milestone 15
+## Milestone 15 invariant
 
-Environmental conditions must gain a canonical lifecycle rather than remaining permanently monotonic. Expiry/removal must be represented by authoritative scheduled data and a typed validated event; arbitrary dictionary deletion is not acceptable. Due-time processing must use canonical world time, deterministic ordering, bounded catch-up, and the same atomic player-turn transaction as existing simulation.
+Environmental removal is a scheduled typed transition, not arbitrary state deletion:
 
-The first vertical slice should let the demo ash squall expire at a configured world minute and restore baseline traversal cost after replayable removal. Tests must cover pre-expiry behavior, exact expiry boundary, restart/replay equality, duplicate/out-of-order/early expiration rejection, bounded backlog interaction with scheduled activation/NPC cycles, provider-failure atomicity, player-visible API/UI updates, and the 1,000-turn continuity gate. The transition must replace the current blanket "active environmental conditions never disappear" validator rule with provenance-aware lifecycle validation rather than simply deleting that invariant.
+```text
+canonical activation due minute + lifespan
+→ deterministic activation slot
+→ ScheduledLocationConditionApplied
+→ reducer materializes canonical expiry queue
+→ deterministic expiry slot
+→ ScheduledLocationConditionExpired
+→ validated condition removal + expiry consumption
+→ persistence / replay
+```
+
+The scheduler may derive an expiry slot from a still-pending activation, so a single large world-time jump can execute activation and expiry in one correctly ordered player-turn transaction. Once activation is reduced, the expiry is also explicit persisted state, making restart behavior deterministic.
+
+Expiry validation requires the exact first pending world event, canonical due minute, materialized expiry id, matching location/condition target, and an active condition. `validate_state()` only permits an environmental condition to disappear when the same transition contains matching typed expiry provenance; manual dictionary deletion still fails with `environment_went_backward`.
+
+The demo Ashfall Yard squall activates at Day 1 08:20 and expires at 08:40. Its +5 minute traversal modifier therefore applies only during that canonical interval; after expiry, movement returns to the five-minute baseline and the existing player projection naturally stops exposing the condition.
+
+The first fully green M15 implementation candidate passed 97 pytest tests plus the seeded 1,000-accepted-turn evaluation. That run produced 1,058 submissions, 1,000 accepted turns, 58 rejections, 2,270 events, 1,000 episodes, and final canonical clock minute 4,361. Replay equality, state validity, monotonic clock/knowledge/event log, item ownership, and event-id uniqueness all remained true with `failures=[]`. These are correctness results, not performance measurements.
+
+## Promotion gate for Milestone 16
+
+Environmental conditions should next affect route legality, not only traversal cost. The rule must remain data-driven: active canonical condition payloads may identify blocked destination/location ids, while no resolver branch may special-case `ash_squall` or another content name.
+
+Player movement must reject a blocked local exit without emitting movement/time events. NPC planning context must omit blocked exits so autonomous planning does not repeatedly propose impossible routes, while the NPC resolver must independently reject a forged blocked move intent. The player-facing API/UI should explain currently blocked exits without exposing future schedule metadata. Expiry of the responsible condition must automatically restore the route through ordinary lifecycle replay.
+
+Tests must cover player rejection/state immutability, NPC planner filtering, forged NPC intent rejection, multiple-condition composition, API/UI explanation, automatic reopening after expiry, replay/restart equality, provider/simulation atomicity where applicable, and the existing 1,000-turn continuity gate.
