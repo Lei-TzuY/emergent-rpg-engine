@@ -24,11 +24,13 @@ from emergent_rpg.providers.scripted import (
 class NarrativeProviderName(StrEnum):
     SCRIPTED = "scripted"
     OPENAI_COMPATIBLE = "openai-compatible"
+    OLLAMA = "ollama"
 
 
 class ActionParserName(StrEnum):
     DETERMINISTIC = "deterministic"
     OPENAI_COMPATIBLE = "openai-compatible"
+    OLLAMA = "ollama"
 
 
 def build_narrative_generator(
@@ -43,7 +45,12 @@ def build_narrative_generator(
 
     if provider is NarrativeProviderName.SCRIPTED:
         return ScriptedNarrativeGenerator()
-    return OpenAICompatibleNarrativeGenerator(_provider_config(env), transport=transport)
+    config = (
+        _ollama_config(env)
+        if provider is NarrativeProviderName.OLLAMA
+        else _provider_config(env)
+    )
+    return OpenAICompatibleNarrativeGenerator(config, transport=transport)
 
 
 def build_action_parser(
@@ -60,8 +67,38 @@ def build_action_parser(
     if parser_name is ActionParserName.DETERMINISTIC:
         return deterministic
 
-    primary = OpenAICompatibleActionParser(_provider_config(env), transport=transport)
+    config = (
+        _ollama_config(env)
+        if parser_name is ActionParserName.OLLAMA
+        else _provider_config(env)
+    )
+    primary = OpenAICompatibleActionParser(config, transport=transport)
     return FallbackActionParser(primary, deterministic)
+
+
+def _ollama_config(env: Mapping[str, str] | None) -> OpenAICompatibleConfig:
+    source = os.environ if env is None else env
+    model = source.get("EMERGENT_RPG_OLLAMA_MODEL", "").strip()
+    if not model:
+        raise ProviderConfigurationError("EMERGENT_RPG_OLLAMA_MODEL is required")
+    base_url = source.get(
+        "EMERGENT_RPG_OLLAMA_BASE_URL",
+        "http://127.0.0.1:11434/v1",
+    ).strip()
+    if not base_url:
+        base_url = "http://127.0.0.1:11434/v1"
+
+    try:
+        return OpenAICompatibleConfig(
+            base_url=base_url,
+            model=model,
+            api_key=source.get("EMERGENT_RPG_OLLAMA_API_KEY") or None,
+            timeout_seconds=_read_float(source, "EMERGENT_RPG_OLLAMA_TIMEOUT", 30.0),
+            temperature=_read_float(source, "EMERGENT_RPG_OLLAMA_TEMPERATURE", 0.7),
+            max_tokens=_read_int(source, "EMERGENT_RPG_OLLAMA_MAX_TOKENS", 500),
+        )
+    except ValidationError as exc:
+        raise ProviderConfigurationError(f"invalid Ollama configuration: {exc}") from exc
 
 
 def _provider_config(env: Mapping[str, str] | None) -> OpenAICompatibleConfig:
