@@ -97,7 +97,15 @@ Three tiers are present:
 2. **Episodic memory** — deterministic `Episode` records with turn range, entities, location, tags, summary, and importance.
 3. **Semantic/canonical memory** — current entities, facts, relationships, NPC knowledge, and unresolved world state.
 
-`MemoryRetriever.retrieve_context()` ranks episodes using recency, entity overlap, location overlap, tags, and importance. Full transcript replay is not required for each turn.
+`MemoryRetriever.retrieve_context()` always starts from persisted episodes and canonical player-known facts. Its baseline episode score uses recency, entity overlap, location overlap, tags, and importance. Full transcript replay is not required for each turn.
+
+### Optional vector reranking
+
+`EmbeddingBackend` is deliberately a text-to-vector interface rather than a vector-search interface. The retriever supplies one query string plus the summaries of already-persisted candidate episodes; the backend can only return vectors in the same order. It has no API for returning episode IDs, facts, or state mutations.
+
+When a backend is configured, cosine similarity is blended into the deterministic episode score. `HashingEmbeddingBackend` provides an offline deterministic feature-hashing implementation with normalized fixed-width vectors, so vector retrieval is executable without a network service or new runtime dependency. Different embedding implementations can satisfy the same protocol later.
+
+The returned batch is validated before use: vector count must match the supplied texts, every vector must have the same non-zero width, and cosine evaluation rejects non-finite values. Backend exceptions or malformed output discard the semantic scores and leave the original deterministic ranking in force. Canonical semantic facts are still populated only from `player_known_facts`; embeddings cannot expand an observer's knowledge boundary.
 
 ## Persistence and replay
 
