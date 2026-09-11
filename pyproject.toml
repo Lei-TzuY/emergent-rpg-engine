@@ -27,6 +27,7 @@ dev = [
 [project.scripts]
 emergent-rpg = "emergent_rpg.cli.app:app"
 emergent-rpg-api = "emergent_rpg.api.server:main"
+emergent-rpg-eval = "emergent_rpg.evaluation.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/emergent_rpg"]
