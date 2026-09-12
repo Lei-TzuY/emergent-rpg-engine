@@ -16,6 +16,7 @@ from emergent_rpg.providers.factory import (
     build_action_parser,
     build_narrative_generator,
 )
+from emergent_rpg.world.pack import WorldPackLoadError, load_world_pack
 
 app = typer.Typer(help="Persistent canonical-state text-RPG engine demo.")
 DEFAULT_DB = Path("emergent-rpg.db")
@@ -81,12 +82,27 @@ def _render_state(state: WorldState) -> str:
 @app.command("new")
 def new_game(
     db: Annotated[Path, DB_OPTION] = DEFAULT_DB,
-    name: Annotated[str, typer.Option(help="Session name.")] = "Ashfall Relay",
+    name: Annotated[str | None, typer.Option(help="Session name override.")] = None,
+    world: Annotated[
+        Path | None,
+        typer.Option("--world", help="Validated JSON world-pack file."),
+    ] = None,
 ) -> None:
-    engine = _engine(db)
-    session = engine.new_session(name)
+    if world is None:
+        engine = _engine(db)
+        session = engine.new_session(name or "Ashfall Relay")
+        store = engine.store
+    else:
+        try:
+            pack = load_world_pack(world)
+        except WorldPackLoadError as exc:
+            raise typer.BadParameter(str(exc), param_hint="--world") from exc
+        store = SQLiteStore(db)
+        session, state = pack.instantiate(name)
+        store.create_session(session, state)
+
     typer.echo(f"Created session {session.id} ({session.name})")
-    typer.echo(_render_state(engine.store.load_state(session.id)))
+    typer.echo(_render_state(store.load_state(session.id)))
 
 
 @app.command()
@@ -167,8 +183,9 @@ def play(
         raise typer.BadParameter(str(exc)) from exc
 
     resolved = _resolve_session(engine.store, session_id)
+    session = engine.store.get_session(resolved)
     typer.echo(
-        "Ashfall Relay — "
+        f"{session.name} — "
         f"provider={provider.value}, action-parser={action_parser.value}; "
         "type `help` for commands, `quit` to exit."
     )
