@@ -166,7 +166,7 @@ def apply_event(state: WorldState, event: Event) -> WorldState:
         del new_state.scheduled_location_condition_expirations[expiry_index]
     elif isinstance(event, StatusApplied):
         char = new_state.entities[event.entity_id].state
-        if all(status.code != event.code for status in char.state_conditions):
+        if all(status.code != event.code for status in char.status_conditions):
             char.status_conditions.append(
                 StatusCondition(
                     code=event.code,
