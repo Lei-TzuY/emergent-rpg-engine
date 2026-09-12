@@ -14,11 +14,17 @@ from emergent_rpg.domain.events import (
     PlayerMoved,
     RelationshipChanged,
     ScheduledLocationConditionApplied,
+    ScheduledLocationConditionExpired,
     SimulationCycleProcessed,
     StatusApplied,
     TimeAdvanced,
 )
-from emergent_rpg.domain.models import NPC, StatusCondition, WorldState
+from emergent_rpg.domain.models import (
+    NPC,
+    ScheduledLocationConditionExpiry,
+    StatusCondition,
+    WorldState,
+)
 
 
 class ReductionError(ValueError):
@@ -96,22 +102,51 @@ def apply_event(state: WorldState, event: Event) -> WorldState:
             event.scheduled_absolute_minute + new_state.simulation.cadence_minutes
         )
     elif isinstance(event, ScheduledLocationConditionApplied):
-        index = next(
+        activation_index = next(
             (
                 idx
-                for idx, scheduled in enumerate(new_state.scheduled_location_conditions)
-                if scheduled.id == event.scheduled_event_id
+                for idx, activation in enumerate(new_state.scheduled_location_conditions)
+                if activation.id == event.scheduled_event_id
             ),
             None,
         )
-        if index is None:
+        if activation_index is None:
             raise ReductionError("scheduled location condition no longer exists")
-        scheduled = new_state.scheduled_location_conditions[index]
-        location = new_state.locations[scheduled.location_id]
-        location.active_conditions[scheduled.condition.code] = scheduled.condition.model_copy(
-            deep=True
+        scheduled_activation = new_state.scheduled_location_conditions[activation_index]
+        location = new_state.locations[scheduled_activation.location_id]
+        location.active_conditions[scheduled_activation.condition.code] = (
+            scheduled_activation.condition.model_copy(deep=True)
         )
-        del new_state.scheduled_location_conditions[index]
+        expiry_minute = scheduled_activation.expiry_absolute_minute
+        if expiry_minute is not None:
+            new_state.scheduled_location_condition_expirations.append(
+                ScheduledLocationConditionExpiry(
+                    id=scheduled_activation.expiry_event_id,
+                    due_absolute_minute=expiry_minute,
+                    location_id=scheduled_activation.location_id,
+                    condition_code=scheduled_activation.condition.code,
+                )
+            )
+        del new_state.scheduled_location_conditions[activation_index]
+    elif isinstance(event, ScheduledLocationConditionExpired):
+        expiry_index = next(
+            (
+                idx
+                for idx, expiry in enumerate(
+                    new_state.scheduled_location_condition_expirations
+                )
+                if expiry.id == event.scheduled_event_id
+            ),
+            None,
+        )
+        if expiry_index is None:
+            raise ReductionError("scheduled location condition expiry no longer exists")
+        scheduled_expiry = new_state.scheduled_location_condition_expirations[expiry_index]
+        location = new_state.locations[scheduled_expiry.location_id]
+        if scheduled_expiry.condition_code not in location.active_conditions:
+            raise ReductionError("scheduled location condition is not active")
+        del location.active_conditions[scheduled_expiry.condition_code]
+        del new_state.scheduled_location_condition_expirations[expiry_index]
     elif isinstance(event, StatusApplied):
         char = new_state.entities[event.entity_id].state
         if all(status.code != event.code for status in char.status_conditions):

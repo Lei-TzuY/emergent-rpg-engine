@@ -107,6 +107,16 @@ class ScheduledLocationConditionApplied(DomainEvent):
     scheduled_absolute_minute: int = Field(ge=0)
 
 
+class ScheduledLocationConditionExpired(DomainEvent):
+    type: Literal["scheduled_location_condition_expired"] = (
+        "scheduled_location_condition_expired"
+    )
+    scheduled_event_id: str
+    scheduled_absolute_minute: int = Field(ge=0)
+    location_id: str
+    condition_code: str
+
+
 class StatusApplied(DomainEvent):
     type: Literal["status_applied"] = "status_applied"
     entity_id: str
@@ -130,6 +140,7 @@ Event = Annotated[
     | TimeAdvanced
     | SimulationCycleProcessed
     | ScheduledLocationConditionApplied
+    | ScheduledLocationConditionExpired
     | StatusApplied,
     Field(discriminator="type"),
 ]
