@@ -52,14 +52,17 @@ def test_actionable_structured_goal_precedes_social_fallback() -> None:
     lio = state.entities["npc_lio"]
     assert isinstance(dax, NPC)
     assert isinstance(lio, NPC)
-    dax.state.current_location = "yard"
-    dax.knowledge.mapped_locations = {"yard"}
+    lio.state.current_location = "bunkhouse"
+    dax.knowledge.mapped_locations = {"bunkhouse", "yard"}
 
-    plan = DeterministicNPCPlanner().plan(build_npc_planning_context(state, dax.id))
+    context = build_npc_planning_context(state, dax.id)
+    assert lio.id in context.visible_npc_ids
+    plan = DeterministicNPCPlanner().plan(context)
 
     assert len(plan.intents) == 1
     assert isinstance(plan.intents[0], NPCMoveIntent)
-    assert plan.intents[0].destination_id == "yard" or plan.intents[0].goal_id == "dax_reach_yard"
+    assert plan.intents[0].goal_id == "dax_reach_yard"
+    assert plan.intents[0].destination_id == "yard"
 
 
 def test_resolver_selects_lexical_new_fact_and_updates_receiver_only() -> None:
