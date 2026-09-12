@@ -70,6 +70,11 @@ def apply_event(state: WorldState, event: Event) -> WorldState:
         npc = new_state.entities[event.npc_id]
         if not isinstance(npc, NPC):
             raise ReductionError("NPCGoalCompleted target is not an NPC")
+        goal = next((item for item in npc.planning_goals if item.id == event.goal_id), None)
+        if goal is None:
+            raise ReductionError("NPCGoalCompleted references an unknown goal")
+        if not goal.required_fact_ids <= npc.knowledge.facts_known:
+            raise ReductionError("NPCGoalCompleted prerequisites are not known")
         npc.completed_goal_ids.add(event.goal_id)
     elif isinstance(event, ItemAcquired):
         item = new_state.items[event.item_id]
