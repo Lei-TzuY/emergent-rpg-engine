@@ -5,6 +5,7 @@ import shlex
 
 from emergent_rpg.domain.actions import (
     FreeformAction,
+    GiveAction,
     InspectAction,
     MoveAction,
     PlayerAction,
@@ -40,6 +41,14 @@ class DeterministicActionParser(ActionParser):
             return TalkAction(target=rest)
         if command in {"take", "get", "pick"} and rest:
             return TakeAction(target=rest)
+        if command == "give" and len(parts) >= 4:
+            separators = [index for index, token in enumerate(parts[1:], start=1) if token.casefold() == "to"]
+            if separators:
+                separator = separators[-1]
+                item = " ".join(parts[1:separator]).strip()
+                receiver = " ".join(parts[separator + 1 :]).strip()
+                if item and receiver:
+                    return GiveAction(item=item, receiver=receiver)
         if command == "wait":
             try:
                 minutes = int(rest) if rest else 10
