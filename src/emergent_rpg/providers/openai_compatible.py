@@ -33,6 +33,7 @@ Convert the player's text into exactly one JSON object and nothing else. You may
 {"kind":"inspect","target":"..."}
 {"kind":"talk","target":"..."}
 {"kind":"take","target":"..."}
+{"kind":"give","item":"...","receiver":"..."}
 {"kind":"wait","minutes":10}
 {"kind":"freeform","text":"..."}
 Use only the visible interaction surface supplied by the engine. Never claim that an action is
