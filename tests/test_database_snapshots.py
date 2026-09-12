@@ -34,9 +34,11 @@ def test_snapshot_preserves_every_persisted_session_and_schema(tmp_path: Path) -
     source_path = tmp_path / "source.db"
     destination_path = tmp_path / "snapshot.db"
     source, session_ids = _populated_database(source_path)
+    source_bytes_before = source_path.read_bytes()
 
     report = create_verified_database_snapshot(source_path, destination_path)
 
+    assert source_path.read_bytes() == source_bytes_before
     assert report.passed
     assert report.sqlite_quick_check == "ok"
     assert report.session_count == 2
