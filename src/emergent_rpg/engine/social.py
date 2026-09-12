@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from emergent_rpg.domain.models import Fact, NPC
+from emergent_rpg.domain.models import NPC, Fact
 
 NEUTRAL_RELATIONSHIP_SCORE = 0
 
