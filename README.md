@@ -26,6 +26,7 @@ Key boundaries:
 - Every material change is a typed event that can be replayed.
 - Mystery deductions are replayable `FactInferred` events with rule/premise provenance.
 - NPC autonomy uses scoped planning contexts, bounded typed intents, and deterministic resolution before any state change.
+- NPC-to-NPC fact sharing uses source-aware replayable events; the planner chooses a receiver only, while the resolver chooses an actually shareable canonical fact.
 - Narrative providers cannot mutate canonical state.
 - Provider failure happens before the state/event transaction is committed.
 - Memory retrieval uses recent turns + persisted episodes + canonical facts; optional vectors only rerank existing episodes.
@@ -51,6 +52,7 @@ Useful commands:
 emergent-rpg status
 emergent-rpg history
 emergent-rpg npc-step --max-actions 3
+emergent-rpg npc-social-step --max-actions 3
 emergent-rpg play
 emergent-rpg-api --db emergent-rpg.db
 ```
@@ -142,13 +144,21 @@ emergent-rpg-api --provider ollama --action-parser ollama
 
 Milestone 5 adds deterministic autonomous NPC execution without giving a planner mutation authority. NPCs can carry structured goals such as reaching a location or investigating an item. The planner receives only the NPC's own knowledge/social state plus local observations, emits a bounded typed intent, and the deterministic NPC resolver must accept it before normal validated events can change canonical state.
 
-Run one explicit autonomous phase with:
+Run one explicit autonomous goal phase with:
 
 ```bash
 emergent-rpg npc-step --max-actions 3
 ```
 
-The current demo lets Dax pursue a location goal and Lio investigate a locally visible clue. NPC-acquired knowledge remains private unless later transferred through ordinary game mechanics. Explicit `npc-step` phases remain available for debugging, while accepted player actions now also trigger deterministic off-screen simulation when the canonical world clock reaches a scheduled cadence.
+Run one explicit NPC social-information phase with:
+
+```bash
+emergent-rpg npc-social-step --max-actions 3
+```
+
+The social phase is deliberately separate from ordinary goal planning and automatic off-screen simulation. Its planner selects a locally visible receiver but not a fact; the deterministic resolver chooses the first source-known / receiver-unknown canonical fact, emits a source-aware `NPCFactShared` event, validates co-location and speaker knowledge, updates only the receiver's fact knowledge, and then evaluates ordinary receiver-scoped mystery inference. This prevents social actions from silently stealing movement/investigation budget while keeping information exchange replayable and persistent. See `docs/NPC_FACT_SHARING.md` for the invariant and verification evidence.
+
+The current demo lets Dax pursue a location goal and Lio investigate a locally visible clue. Explicit `npc-step` phases remain available for debugging, while accepted player actions also trigger deterministic off-screen simulation when the canonical world clock reaches a scheduled cadence.
 
 ## Deterministic world simulation
 
@@ -176,11 +186,11 @@ mypy src/emergent_rpg
 pytest
 ```
 
-CI runs all three checks on Python 3.12. Provider, embedding, and FastAPI integration tests are offline; API tests use in-process `TestClient` and never start a network listener.
+CI runs all three checks on Python 3.12, builds the wheel, verifies packaged browser assets, and executes the seeded 1,000-accepted-turn consistency gate. Provider, embedding, FastAPI, and NPC social integration tests remain offline.
 
 ## Current limitations
 
-A browser UI, richer combat/stat systems, model routing/cost controls, authentication/multi-user API concerns, and neural embedding integration are future work. World simulation currently covers deterministic cadence plus off-screen NPC goals; richer scheduled world events and non-NPC environmental systems remain future extensions.
+NPC fact sharing is currently an explicit bounded social phase; relationship-sensitive disclosure policy and automatic social scheduling are not yet implemented. Richer combat/stat systems, authentication/multi-user API concerns, and neural embedding integration also remain future work.
 
 The OpenAI-compatible provider currently targets the common `/chat/completions` JSON shape and intentionally supports text responses only. Live endpoint interoperability depends on the selected server/model and is not claimed by offline CI.
 

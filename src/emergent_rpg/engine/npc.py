@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from emergent_rpg.domain.events import (
     Event,
     FactDiscovered,
+    NPCFactShared,
     NPCGoalCompleted,
     NPCItemLocationObserved,
     NPCLocationMapped,
@@ -18,6 +19,7 @@ from emergent_rpg.domain.npc_actions import (
     NPCMoveIntent,
     NPCPlan,
     NPCPlanningContext,
+    NPCShareFactIntent,
 )
 from emergent_rpg.engine.environment import EnvironmentalRules
 from emergent_rpg.engine.mystery import MysteryGraph
@@ -121,6 +123,14 @@ class DeterministicNPCPlanner:
         return NPCPlan(npc_id=context.npc_id, intents=intents)
 
     @staticmethod
+    def plan_fact_share(context: NPCPlanningContext) -> NPCShareFactIntent | None:
+        if context.movement_blocked or not context.known_fact_ids:
+            return None
+        if not context.visible_npc_ids:
+            return None
+        return NPCShareFactIntent(receiver_id=sorted(context.visible_npc_ids)[0])
+
+    @staticmethod
     def _intent_for_goal(
         context: NPCPlanningContext,
         goal: NPCGoal,
@@ -173,20 +183,23 @@ class DeterministicNPCResolver:
         if not entity.state.alive or not entity.state.conscious:
             return NPCActionResult(accepted=False, reason="NPC cannot act right now.")
 
-        goal = self._goal(entity, intent.goal_id)
-        if goal is None:
-            return NPCActionResult(accepted=False, reason="NPC goal does not exist.")
-        if goal.id in entity.completed_goal_ids:
-            return NPCActionResult(accepted=False, reason="NPC goal is already complete.")
-
-        if isinstance(intent, NPCMoveIntent):
-            result = self._resolve_move(state, entity, goal, intent, turn_number)
-        elif isinstance(intent, NPCInspectIntent):
-            result = self._resolve_inspect(state, entity, goal, intent, turn_number)
-        elif isinstance(intent, NPCCompleteGoalIntent):
-            result = self._resolve_completion(entity, goal, turn_number)
+        if isinstance(intent, NPCShareFactIntent):
+            result = self._resolve_share(state, entity, intent, turn_number)
         else:
-            return NPCActionResult(accepted=False, reason="Unsupported NPC intent.")
+            goal = self._goal(entity, intent.goal_id)
+            if goal is None:
+                return NPCActionResult(accepted=False, reason="NPC goal does not exist.")
+            if goal.id in entity.completed_goal_ids:
+                return NPCActionResult(accepted=False, reason="NPC goal is already complete.")
+
+            if isinstance(intent, NPCMoveIntent):
+                result = self._resolve_move(state, entity, goal, intent, turn_number)
+            elif isinstance(intent, NPCInspectIntent):
+                result = self._resolve_inspect(state, entity, goal, intent, turn_number)
+            elif isinstance(intent, NPCCompleteGoalIntent):
+                result = self._resolve_completion(entity, goal, turn_number)
+            else:
+                return NPCActionResult(accepted=False, reason="Unsupported NPC intent.")
 
         if not result.accepted:
             return result
@@ -203,6 +216,42 @@ class DeterministicNPCResolver:
     @staticmethod
     def _goal(npc: NPC, goal_id: str) -> NPCGoal | None:
         return next((goal for goal in npc.planning_goals if goal.id == goal_id), None)
+
+    @staticmethod
+    def _resolve_share(
+        state: WorldState,
+        source: NPC,
+        intent: NPCShareFactIntent,
+        turn_number: int,
+    ) -> NPCActionResult:
+        receiver = state.entities.get(intent.receiver_id)
+        if not isinstance(receiver, NPC) or receiver.id == source.id:
+            return NPCActionResult(accepted=False, reason="Fact-sharing receiver is not an NPC.")
+        if not receiver.state.alive or not receiver.state.conscious:
+            return NPCActionResult(accepted=False, reason="Fact-sharing receiver cannot interact.")
+        if receiver.state.current_location != source.state.current_location:
+            return NPCActionResult(accepted=False, reason="Fact-sharing receiver is not here.")
+
+        shareable = sorted(
+            fact_id
+            for fact_id in source.knowledge.facts_known - receiver.knowledge.facts_known
+            if fact_id in state.facts
+        )
+        if not shareable:
+            return NPCActionResult(accepted=False, reason="NPC has no new fact to share.")
+        fact_id = shareable[0]
+        return NPCActionResult(
+            accepted=True,
+            emitted_events=[
+                NPCFactShared(
+                    turn_number=turn_number,
+                    source_npc_id=source.id,
+                    receiver_npc_id=receiver.id,
+                    fact_id=fact_id,
+                )
+            ],
+            tags={"npc_dialogue", "npc_fact_share"},
+        )
 
     @staticmethod
     def _map_if_new(npc: NPC, location_id: str, turn_number: int) -> list[Event]:

@@ -6,6 +6,7 @@ from uuid import uuid4
 from emergent_rpg.domain.actions import PlayerAction
 from emergent_rpg.domain.events import (
     Event,
+    NPCFactShared,
     ScheduledLocationConditionApplied,
     ScheduledLocationConditionExpired,
     SimulationCycleProcessed,
@@ -250,6 +251,86 @@ class GameEngine:
             candidate,
         )
 
+    def _execute_npc_social_phase_on_state(
+        self,
+        state: WorldState,
+        *,
+        turn_number: int,
+        max_actions: int,
+    ) -> tuple[NPCPhaseResult, WorldState]:
+        if not 1 <= max_actions <= 20:
+            raise ValueError("max_actions must be between 1 and 20")
+
+        candidate = state.model_copy(deep=True)
+        decisions: list[NPCDecision] = []
+        emitted_events: list[Event] = []
+        involved_npc_ids: set[str] = set()
+        actions_attempted = 0
+        actions_executed = 0
+
+        npc_ids = sorted(
+            entity_id
+            for entity_id, entity in candidate.entities.items()
+            if entity.kind == "npc"
+        )
+        for npc_id in npc_ids:
+            if actions_attempted >= max_actions:
+                break
+            context = build_npc_planning_context(candidate, npc_id)
+            intent = self.npc_planner.plan_fact_share(context)
+            if intent is None:
+                continue
+
+            actions_attempted += 1
+            action_result = self.npc_resolver.resolve(
+                candidate,
+                npc_id,
+                intent,
+                turn_number,
+            )
+            decisions.append(
+                NPCDecision(
+                    npc_id=npc_id,
+                    intent=intent,
+                    accepted=action_result.accepted,
+                    reason=action_result.reason,
+                )
+            )
+            if not action_result.accepted:
+                continue
+
+            receiver_ids: set[str] = set()
+            for event in action_result.emitted_events:
+                candidate = self._apply_validated_event(candidate, event)
+                emitted_events.append(event)
+                if isinstance(event, NPCFactShared):
+                    receiver_ids.add(event.receiver_npc_id)
+                    involved_npc_ids.add(event.receiver_npc_id)
+
+            for receiver_id in sorted(receiver_ids):
+                inferred_events = self.mystery.infer_events(
+                    candidate,
+                    receiver_id,
+                    turn_number,
+                )
+                for event in inferred_events:
+                    candidate = self._apply_validated_event(candidate, event)
+                    emitted_events.append(event)
+
+            actions_executed += 1
+            involved_npc_ids.add(npc_id)
+
+        return (
+            NPCPhaseResult(
+                actions_attempted=actions_attempted,
+                actions_executed=actions_executed,
+                decisions=decisions,
+                emitted_events=emitted_events,
+                involved_npc_ids=involved_npc_ids,
+            ),
+            candidate,
+        )
+
     def _run_due_simulation(
         self,
         state: WorldState,
@@ -360,6 +441,48 @@ class GameEngine:
             location_id=candidate.player().state.current_location,
             involved_entities=phase.involved_npc_ids,
             tags={"npc", "autonomous"},
+        )
+        self.store.commit_turn(
+            session_id,
+            candidate,
+            phase.emitted_events,
+            turn,
+            None,
+        )
+        return phase, candidate
+
+    def run_npc_social_phase(
+        self,
+        session_id: str,
+        max_actions: int = 3,
+    ) -> tuple[NPCPhaseResult, WorldState]:
+        before = self.store.load_state(session_id)
+        phase, candidate = self._execute_npc_social_phase_on_state(
+            before,
+            turn_number=before.turn_number + 1,
+            max_actions=max_actions,
+        )
+        if not phase.emitted_events:
+            return phase, before
+
+        state_report = validate_state(
+            candidate,
+            previous=before,
+            transition_events=phase.emitted_events,
+        )
+        if not state_report.valid:
+            raise TransitionRejected(str(state_report.issues))
+
+        narration = f"NPC social phase executed {phase.actions_executed} action(s)."
+        turn = Turn(
+            session_id=session_id,
+            turn_number=candidate.turn_number,
+            raw_input="[npc-social-phase]",
+            accepted=True,
+            narration=narration,
+            location_id=candidate.player().state.current_location,
+            involved_entities=phase.involved_npc_ids,
+            tags={"npc", "autonomous", "social"},
         )
         self.store.commit_turn(
             session_id,

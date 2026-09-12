@@ -8,6 +8,7 @@ from emergent_rpg.domain.events import (
     FactInferred,
     ItemAcquired,
     ItemDropped,
+    NPCFactShared,
     NPCGoalCompleted,
     NPCItemLocationObserved,
     NPCLearnedFact,
@@ -59,6 +60,11 @@ def apply_event(state: WorldState, event: Event) -> WorldState:
             del npc.knowledge.item_location_beliefs[event.item_id]
         else:
             raise ReductionError("negative item observation does not match NPC belief")
+    elif isinstance(event, NPCFactShared):
+        receiver = new_state.entities[event.receiver_npc_id]
+        if not isinstance(receiver, NPC):
+            raise ReductionError("NPCFactShared receiver is not an NPC")
+        receiver.knowledge.facts_known.add(event.fact_id)
     elif isinstance(event, NPCGoalCompleted):
         npc = new_state.entities[event.npc_id]
         if not isinstance(npc, NPC):
