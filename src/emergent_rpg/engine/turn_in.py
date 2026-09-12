@@ -89,6 +89,9 @@ class ItemTurnInConsequencePolicy:
             return "player lacks item turn-in rule prerequisites"
         if not rule.required_receiver_fact_ids <= receiver.knowledge.facts_known:
             return "receiver lacks item turn-in rule prerequisites"
-        if rule.required_goal_id is not None and rule.required_goal_id not in receiver.completed_goal_ids:
+        if (
+            rule.required_goal_id is not None
+            and rule.required_goal_id not in receiver.completed_goal_ids
+        ):
             return "required item turn-in goal is not complete"
         return None
