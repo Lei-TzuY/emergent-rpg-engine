@@ -65,3 +65,29 @@ jobs:
           assert report["unique_event_ids"] is True
           print("verified deterministic 1000-turn consistency report")
           PY
+      - name: Run autonomy integration evaluation
+        run: |
+          emergent-rpg-eval \
+            --scenario autonomy \
+            --db /tmp/emergent-autonomy.db \
+            --rounds 20 \
+            --output /tmp/emergent-autonomy.json
+      - name: Verify autonomy integration report
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(
+              Path("/tmp/emergent-autonomy.json").read_text(encoding="utf-8")
+          )
+          assert report["passed"] is True, report["failures"]
+          assert all(report["milestones"].values()), report["milestones"]
+          assert report["replay_equal"] is True
+          assert report["state_valid"] is True
+          assert report["unique_event_ids"] is True
+          assert report["item_ownership_valid"] is True
+          assert report["private_fact_isolated"] is True
+          assert report["event_type_counts"]["simulation_cycle_processed"] > 0
+          print("verified autonomy/custody/social integration report")
+          PY
