@@ -28,6 +28,7 @@ dev = [
 emergent-rpg = "emergent_rpg.cli.app:app"
 emergent-rpg-api = "emergent_rpg.api.server:main"
 emergent-rpg-backup = "emergent_rpg.backup_cli:app"
+emergent-rpg-db-check = "emergent_rpg.database_audit_cli:app"
 emergent-rpg-eval = "emergent_rpg.evaluation.cli:main"
 emergent-rpg-verify = "emergent_rpg.verification_cli:app"
 
