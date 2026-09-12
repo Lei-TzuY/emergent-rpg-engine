@@ -342,7 +342,11 @@ class GameEngine:
         if not phase.emitted_events:
             return phase, before
 
-        state_report = validate_state(candidate, previous=before)
+        state_report = validate_state(
+            candidate,
+            previous=before,
+            transition_events=phase.emitted_events,
+        )
         if not state_report.valid:
             raise TransitionRejected(str(state_report.issues))
 

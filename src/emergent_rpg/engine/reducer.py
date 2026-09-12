@@ -10,6 +10,7 @@ from emergent_rpg.domain.events import (
     ItemDropped,
     NPCGoalCompleted,
     NPCLearnedFact,
+    NPCLocationMapped,
     NPCMoved,
     PlayerMoved,
     RelationshipChanged,
@@ -42,6 +43,11 @@ def apply_event(state: WorldState, event: Event) -> WorldState:
         if not isinstance(npc, NPC):
             raise ReductionError("NPCMoved target is not an NPC")
         npc.state.current_location = event.to_location
+    elif isinstance(event, NPCLocationMapped):
+        npc = new_state.entities[event.npc_id]
+        if not isinstance(npc, NPC):
+            raise ReductionError("NPCLocationMapped target is not an NPC")
+        npc.knowledge.mapped_locations.add(event.location_id)
     elif isinstance(event, NPCGoalCompleted):
         npc = new_state.entities[event.npc_id]
         if not isinstance(npc, NPC):

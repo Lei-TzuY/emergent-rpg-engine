@@ -19,7 +19,8 @@ The project advances by coherent executable slices rather than placeholder subsy
 15. **Environmental condition lifecycle / expiry** — canonical lifespans, typed validated expiry events, explicit replayable expiry queues, bounded lifecycle processing, provenance-aware removal, and restoration of baseline rules. **Complete.**
 16. **Environmental route access / closures** — data-driven blocked exits, deterministic player/NPC enforcement, parser/API/CLI/UI projection, validator backstop, and automatic route restoration after expiry. **Complete.**
 17. **Knowledge-scoped NPC multi-hop navigation / rerouting** — explicit NPC route knowledge, bounded deterministic path selection over known topology, dynamic closure-aware replanning, resolver-validated step execution, persistence, and replay without global-world omniscience. **Complete.**
-18. **Replayable NPC map learning / route discovery** — typed observation-driven expansion of NPC map knowledge, physical-presence validation, reducer-owned knowledge updates, and persistence/replay without cross-observer leakage. **Next.**
+18. **Replayable NPC map learning / route discovery** — typed observation-driven expansion of NPC map knowledge, physical-presence validation, reducer-owned knowledge updates, monotonic provenance, off-screen simulation integration, and persistence/replay without cross-observer leakage. **Complete.**
+19. **Knowledge-scoped NPC item pursuit / search** — replayable observer-specific item-location beliefs, pursuit over known topology, stale-belief correction by local observation, and deterministic local inspection without global item-truth leakage. **Next.**
 
 ## Milestone 3 invariant
 
@@ -289,10 +290,44 @@ The first fully green M17 implementation head passed wheel/package checks, Ruff,
 
 For seed `20260911`, the long-run gate produced 1,058 submissions, 1,000 accepted turns, 58 deterministic rejections, 2,270 events, 1,058 persisted turns, 1,000 episodes, and final canonical clock minute 4,361. Replay equality, state validity, monotonic clock/knowledge/event log, item ownership, and event-id uniqueness all remained true with `failures=[]`. These figures are correctness evidence, not performance measurements.
 
-## Promotion gate for Milestone 18
+## Milestone 18 invariant
 
-`mapped_locations` is canonical, but merely standing in or traversing a location does not yet create replayable map knowledge. The current planner can observe local exits transiently, so an NPC may use the topology while present and then lose that information after leaving unless the location was configured as already mapped.
+NPC map learning is a typed observer-specific transition rather than planner-side memory or direct state mutation:
 
-The next coherent slice should make route discovery itself a typed canonical transition. A mapping/observation event must identify the NPC and observed location, validate that the NPC is alive, conscious, and physically present there, and update only that NPC's `mapped_locations` through the reducer. Normal autonomous execution should emit this event when an NPC first observes a previously unmapped current or arrival location; direct set mutation outside replay/reduction must not become a second authority path.
+```text
+accepted NPC intent
+→ local observation at current location
+→ NPCLocationMapped if fresh
+→ ordinary reducer updates only that NPC
+→ optional movement
+→ NPCLocationMapped at arrival if fresh
+→ persistence / replay
+```
 
-Tests must cover initial-location observation, learning after movement, idempotence for already-mapped locations, forged remote-map rejection, no cross-NPC or player-knowledge leakage, persistence/restart/replay equality, off-screen simulation integration, and the existing 1,000-turn continuity gate.
+A valid mapping event requires an existing location and an NPC who is alive, conscious, and physically present there. Duplicate observations are rejected at event-precondition level. Final-state validation requires every newly added `(npc_id, location_id)` relative to the previous state to have matching transition-event provenance, rejects missing mapped locations, and treats map knowledge as monotonic: an NPC cannot silently forget a previously mapped location.
+
+Mapping does not bypass the existing NPC action budget. Idle NPCs with no accepted intent do not generate background observation events. For movement, the current location is mapped before `NPCMoved` and the arrival location only after movement has placed the NPC there; inspection and already-satisfied reach goals map only the current location before their ordinary completion events. The planner still receives scoped `NPCPlanningContext` and retains no mutation authority.
+
+Explicit autonomous phases pass their emitted events to final provenance validation. Automatic off-screen simulation already aggregates the same events in the player-turn simulation transaction. Provider narration failure occurs before scheduled simulation, so map learning cannot leak into a failed player turn.
+
+The first fully green M18 implementation head passed wheel/package checks, browser-asset verification, Ruff, strict mypy across 45 source files, **119 pytest tests**, and the seeded 1,000-accepted-turn evaluation plus JSON verifier. Focused coverage proves remote/duplicate observation rejection, unauthorized direct map mutation rejection, map-memory monotonicity, current/arrival event ordering, idempotence for known locations, acting-NPC-only knowledge, SQLite restart/replay equality, off-screen simulation isolation, and provider-failure atomicity.
+
+For seed `20260911`, the long-run gate produced 1,058 submissions, 1,000 accepted turns, 58 deterministic rejections, **2,272 events**, 1,058 persisted turns, 1,000 episodes, and final canonical clock minute 4,361. Replay equality, state validity, monotonic clock/player knowledge/event log, item ownership, and event-id uniqueness all remained true with `failures=[]`. The two-event increase over M17 is explained by real replayable off-screen Dax map observations. These figures are correctness evidence, not performance measurements.
+
+## Promotion gate for Milestone 19
+
+`investigate_item` still becomes actionable only when its target is already visible at the NPC's current location or in that NPC's inventory. The planner has no canonical observer-specific memory of where an item was previously seen. Reading `WorldState.items[target].location_id` directly would create omniscient pursuit and violate the epistemic boundary established for map navigation.
+
+The next coherent slice should make item-location observation replayable before adding pursuit:
+
+```text
+locally visible / owned item
+→ typed NPC item-observation event
+→ observer-specific canonical item-location belief
+→ NPCPlanningContext receives only that NPC's belief
+→ investigate_item routes through known topology toward remembered location
+→ local arrival observation confirms, updates, or invalidates stale belief
+→ ordinary local inspection when accessible
+```
+
+A belief must originate only from local visibility or ownership, never from global item truth. If another actor later moves the item, the NPC's remote belief must remain stale until local evidence corrects it; the engine must not silently synchronize private knowledge from canonical item state. Pursuit may use only locations/routes the NPC already knows. Forged remote item observations and cross-NPC knowledge transfer must be rejected, stale-belief correction must be replayable, and persistence/restart/replay plus the existing 1,000-turn continuity gate must remain green.
