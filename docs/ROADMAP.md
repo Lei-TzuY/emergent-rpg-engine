@@ -23,7 +23,8 @@ The project advances by coherent executable slices rather than placeholder subsy
 19. **Knowledge-scoped NPC item pursuit / search** — replayable observer-specific item-location beliefs, pursuit over known topology, stale-belief correction by local observation, and deterministic local inspection without global item-truth leakage. **Complete.**
 20. **Replayable NPC information exchange / fact sharing** — source-aware typed fact transfer between co-located NPCs, speaker-knowledge validation, receiver-only canonical updates, explicit bounded social execution, CLI integration, and replayable provenance without bulk private-memory copying. **Complete.**
 21. **Relationship-gated social disclosure / trust policy** — data-driven per-fact disclosure requirements, source→receiver relationship scoring, resolver-enforced eligibility, and deterministic selective sharing without exposing receiver-private knowledge to the planner. **Complete.**
-22. **Automatic off-screen social diffusion / simulation integration** — independent canonical social-action budget per simulation cycle, off-screen-only trust-gated fact propagation, ordinary NPC-budget isolation, atomic persistence/replay, and no player-facing metadata leakage. **Next.**
+22. **Automatic off-screen social diffusion / simulation integration** — independent canonical social-action budget per simulation cycle, off-screen-only trust-gated fact propagation, ordinary NPC-budget isolation, atomic persistence/replay, and no player-facing metadata leakage. **Complete.**
+23. **NPC→player dialogue disclosure / trust-gated conversation** — reuse canonical social-disclosure policy for `TalkAction`, directed NPC→player trust thresholds, deterministic public fallback, and replayable relationship-based unlock across CLI/API/browser paths. **Next.**
 
 ## Milestone 3 invariant
 
@@ -110,7 +111,7 @@ provider/parser name = ollama
 → default http://127.0.0.1:11434/v1
 → existing OpenAICompatibleClient transport
 → existing narration or action-parser boundary
-→ deterministic resolver / transactional engine unchanged
+→ deterministic GameEngine authority unchanged
 ```
 
 `EMERGENT_RPG_OLLAMA_MODEL` is explicit and required; base URL, proxy API key, timeout, temperature, and token budget have separate `EMERGENT_RPG_OLLAMA_*` controls. The preset does not inherit generic `EMERGENT_RPG_LLM_API_KEY`, preventing accidental credential bleed into a local endpoint. CI uses injected fake transport and never requires a live Ollama daemon.
@@ -394,17 +395,42 @@ The fully green M21 implementation head `31d73f5695969af26905e40e59c71aa2e30ab92
 
 For seed `20260911`, the long-run gate produced 1,058 submissions, 1,000 accepted turns, 58 deterministic rejections, 2,272 events, 1,058 persisted turns, 1,000 episodes, and final canonical clock minute 4,361. Replay equality, state validity, monotonic clock/player knowledge/event log, item ownership, and event-id uniqueness all remained true with `failures=[]`. The seeded player workload does not invoke the explicit social phase, so the event count remains the M20 baseline; M21 behavior is covered by dedicated trust/disclosure integration regressions.
 
-## Promotion gate for Milestone 22
+## Milestone 22 invariant
 
-Trust-aware information exchange is now correct and replayable but still explicit-only. The next coherent slice should integrate the already-validated social phase into scheduled off-screen simulation without reintroducing the M20 action-budget regression:
+Automatic social diffusion is a scheduled use of the existing social authority path, not a second knowledge-mutation subsystem:
 
 ```text
 canonical simulation cadence
-→ ordinary off-screen NPC goal phase with existing max_npc_actions_per_cycle
-→ separate off-screen social phase with independent max_npc_social_actions_per_cycle
-→ trust-gated NPCFactShared / receiver inference
+→ ordinary off-screen NPC goal phase under max_npc_actions_per_cycle
+→ off-screen social phase under max_social_actions_per_cycle
+→ existing planner / SocialDisclosurePolicy / resolver / validator
+→ NPCFactShared + receiver-scoped inference
 → SimulationCycleProcessed
 → one atomic player-turn commit / replay
 ```
 
-The social budget must be canonical and independent from movement/investigation budget. Automatic social actions must exclude NPCs sharing the player's current location, so private background exchange cannot occur during a visible interaction. The social planner/resolver/validator authority path from M20–M21 must be reused rather than duplicated. Hidden social participant ids and private facts must remain absent from player-facing `Turn`/`Episode` metadata. Narrative-provider failure must still happen before due simulation, preserving zero-partial-commit semantics. Focused tests must prove budget independence, off-screen isolation, trust enforcement, receiver inference, restart/replay, provider-failure atomicity, and player-metadata non-leakage, followed by the existing 1,000-turn continuity gate.
+The ordinary and social phases have independent canonical budgets, so information exchange cannot consume movement or investigation capacity. Social-source eligibility is recomputed after the ordinary phase and excludes NPCs at the player's current location. Because a valid share also requires source and receiver to be physically co-located, accepted automatic transfers remain off-screen. The explicit `npc-social-step` path deliberately retains `offscreen_only=False` for operator-driven execution.
+
+Scheduling does not copy facts or change relationships directly. Every automatic transfer still passes the Milestone 20–21 planner, resolver, `SocialDisclosurePolicy`, generic event validation, receiver-only reducer, and receiver-scoped mystery inference. Off-screen participant ids/private facts remain absent from player-facing `Turn` and `Episode` metadata.
+
+Narrative generation still occurs before due simulation. Provider failure therefore leaves player events, NPC goal events, social events, simulation markers, turns, and state uncommitted. Goal actions, social transfers, and the cadence marker are reduced on one candidate state and persist only when the complete player-turn transaction succeeds.
+
+The first fully green M22 implementation head `d1d5a1753381e5c3d81f656018ba311549178fb3` passed standard wheel/package checks, browser-asset verification, Ruff, strict mypy across **46 source files**, **144 pytest tests**, the seeded 1,000-accepted-turn evaluation, and the JSON verifier. Focused SQLite regressions prove bounded automatic sharing, player-visible NPC exclusion, independent ordinary/social budgets, goal→social→marker ordering, replay equality, player-metadata isolation, and provider-failure zero-commit behavior.
+
+For seed `20260911`, the long-run gate produced 1,058 submissions, 1,000 accepted turns, 58 deterministic rejections, **2,274 events**, 1,058 persisted turns, 1,000 episodes, and final canonical clock minute 4,361. Replay equality, state validity, monotonic clock/player knowledge/event log, item ownership, and event-id uniqueness all remained true with `failures=[]`. The event log increased by two from the M21 baseline while all other tracked continuity metrics stayed unchanged; these figures are correctness evidence, not performance measurements.
+
+## Promotion gate for Milestone 23
+
+NPC-to-NPC disclosure now has one canonical policy across explicit and automatic execution, but player-facing deterministic dialogue still bypasses that policy. `TalkAction` currently selects the lexical NPC-known / player-unknown discoverable fact without consulting `Fact.disclosure_min_relationship`. The next coherent slice should close that cross-layer authority gap rather than invent another trust system:
+
+```text
+player TalkAction targets local NPC
+→ candidate NPC-known / player-unknown facts
+→ ordinary MysteryGraph discovery prerequisites
+→ SocialDisclosurePolicy using NPC→player directed relationship
+→ lexical first eligible fact
+→ ordinary FactDiscovered(observer=player)
+→ existing GameEngine validation / persistence / replay
+```
+
+Public facts must remain available at neutral trust, while restricted facts require the speaking NPC's directed relationship toward the player; a reverse player→NPC score must not unlock disclosure. Existing replayable `RelationshipChanged` events should be able to unlock a restricted fact on a later conversation without direct state mutation or a dialogue-only trust store. If a restricted fact is blocked but another public candidate is eligible, dialogue should deterministically fall back to the eligible public fact. Talking with no eligible new fact remains a valid conversation/time advance but must not leak the restricted proposition. CLI, API, browser, and LLM-parsed `talk` inputs should all inherit the same resolver behavior rather than receiving transport-specific branches. Focused tests should prove directionality, public fallback, relationship unlock, SQLite replay, API-path parity, and provider-failure atomicity, followed by the existing 1,000-turn continuity gate.
