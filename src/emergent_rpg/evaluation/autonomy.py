@@ -7,10 +7,10 @@ from pydantic import BaseModel, Field
 
 from emergent_rpg.domain.actions import GiveAction, TakeAction, WaitAction
 from emergent_rpg.domain.models import (
+    NPC,
     DialogueRelationshipRule,
     GameSession,
     ItemTurnInConsequenceRule,
-    NPC,
     NPCGoal,
     WorldState,
 )
