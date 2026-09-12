@@ -52,6 +52,7 @@ class NPCKnowledge(BaseModel):
     facts_known: set[FactId] = Field(default_factory=set)
     beliefs: dict[str, str] = Field(default_factory=dict)
     mapped_locations: set[LocationId] = Field(default_factory=set)
+    item_location_beliefs: dict[ItemId, LocationId] = Field(default_factory=dict)
 
 
 class CharacterState(BaseModel):
