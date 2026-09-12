@@ -43,6 +43,7 @@ class NPCPlanningContext(BaseModel):
     npc_name: str
     current_location_id: str
     exits: dict[str, str]
+    known_routes: dict[str, set[str]] = Field(default_factory=dict)
     visible_item_ids: set[str] = Field(default_factory=set)
     inventory_item_ids: set[str] = Field(default_factory=set)
     visible_npc_ids: set[str] = Field(default_factory=set)
