@@ -108,6 +108,7 @@ class RelationshipChanged(DomainEvent):
     source_id: str
     target_id: str
     delta: int
+    rule_id: str | None = None
 
 
 class TimeAdvanced(DomainEvent):
