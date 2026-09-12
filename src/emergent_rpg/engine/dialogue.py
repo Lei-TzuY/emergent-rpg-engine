@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from emergent_rpg.domain.events import RelationshipChanged
-from emergent_rpg.domain.models import DialogueRelationshipRule, NPC, WorldState
+from emergent_rpg.domain.models import NPC, DialogueRelationshipRule, WorldState
 
 
 class DialogueRelationshipPolicy:
