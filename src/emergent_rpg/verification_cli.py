@@ -11,6 +11,7 @@ from emergent_rpg.persistence.verification import verify_session
 app = typer.Typer(
     help="Read-only integrity verification for a persisted emergent-rpg session.",
     invoke_without_command=True,
+    context_settings={"allow_interspersed_args": True},
 )
 DEFAULT_DB = Path("emergent-rpg.db")
 
