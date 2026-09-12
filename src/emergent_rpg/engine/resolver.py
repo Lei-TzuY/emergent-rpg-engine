@@ -90,6 +90,8 @@ class DeterministicResolver:
             item = self._find_item(state, action.target, location_id)
             if item is None or item.location_id != location_id:
                 return ActionResult(accepted=False, reason="That item is not here to take.")
+            if "portable" not in item.flags:
+                return ActionResult(accepted=False, reason="That item cannot be carried.")
             events: list[Event] = [
                 ItemAcquired(
                     turn_number=turn,
