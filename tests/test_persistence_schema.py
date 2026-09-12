@@ -111,3 +111,31 @@ def test_partial_legacy_schema_is_rejected_without_auto_repair(tmp_path: Path) -
     tables = set(inspect(engine).get_table_names())
     assert tables == {"game_sessions"}
     assert "schema_metadata" not in tables
+
+
+def test_malformed_schema_metadata_shape_is_rejected_without_repair(tmp_path: Path) -> None:
+    path = tmp_path / "malformed-metadata.db"
+    store = SQLiteStore(path)
+    with store.engine.begin() as connection:
+        connection.execute(text("ALTER TABLE schema_metadata ADD COLUMN unexpected TEXT"))
+
+    with pytest.raises(StoreSchemaError, match="schema_metadata has an unsupported shape"):
+        SQLiteStore(path)
+
+    columns = {column["name"] for column in inspect(store.engine).get_columns("schema_metadata")}
+    assert columns == {"id", "schema_version", "unexpected"}
+
+
+def test_extra_legacy_table_is_rejected_without_adoption(tmp_path: Path) -> None:
+    path = tmp_path / "extra-legacy.db"
+    engine = create_engine(f"sqlite:///{path}")
+    Base.metadata.create_all(engine)
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE unknown_extension (id INTEGER PRIMARY KEY)"))
+
+    with pytest.raises(StoreSchemaError, match="database table set does not match"):
+        SQLiteStore(path)
+
+    tables = set(inspect(engine).get_table_names())
+    assert "unknown_extension" in tables
+    assert "schema_metadata" not in tables
