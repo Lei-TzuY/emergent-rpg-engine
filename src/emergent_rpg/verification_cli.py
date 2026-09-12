@@ -17,7 +17,10 @@ DEFAULT_DB = Path("emergent-rpg.db")
 
 @app.callback(invoke_without_command=True)
 def verify_session_command(
-    session_id: Annotated[str | None, typer.Argument(help="Session id; latest when omitted.")] = None,
+    session_id: Annotated[
+        str | None,
+        typer.Argument(help="Session id; latest when omitted."),
+    ] = None,
     db: Annotated[Path, typer.Option("--db", help="Existing SQLite database path.")] = DEFAULT_DB,
 ) -> None:
     if not db.exists():
