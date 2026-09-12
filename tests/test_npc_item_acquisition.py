@@ -7,7 +7,6 @@ from emergent_rpg.domain.events import (
     ItemAcquired,
     NPCGoalCompleted,
     NPCItemLocationObserved,
-    NPCMoved,
 )
 from emergent_rpg.domain.models import NPC, GameSession, NPCGoal
 from emergent_rpg.domain.npc_actions import (
