@@ -41,6 +41,13 @@ class NPCItemLocationObserved(DomainEvent):
     present: bool
 
 
+class NPCFactShared(DomainEvent):
+    type: Literal["npc_fact_shared"] = "npc_fact_shared"
+    source_npc_id: str
+    receiver_npc_id: str
+    fact_id: str
+
+
 class NPCGoalCompleted(DomainEvent):
     type: Literal["npc_goal_completed"] = "npc_goal_completed"
     npc_id: str
@@ -144,6 +151,7 @@ Event = Annotated[
     | NPCMoved
     | NPCLocationMapped
     | NPCItemLocationObserved
+    | NPCFactShared
     | NPCGoalCompleted
     | ItemAcquired
     | ItemDropped
