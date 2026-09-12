@@ -9,6 +9,7 @@ from emergent_rpg.domain.events import (
     Event,
     FactDiscovered,
     FactInferred,
+    NPCFactShared,
     NPCGoalCompleted,
     NPCItemLocationObserved,
     NPCLocationMapped,
@@ -264,6 +265,8 @@ def validate_event_preconditions(state: WorldState, event: Event) -> ValidationR
         _validate_npc_location_mapped(state, event, report)
     elif isinstance(event, NPCItemLocationObserved):
         _validate_npc_item_location_observed(state, event, report)
+    elif isinstance(event, NPCFactShared):
+        _validate_npc_fact_shared(state, event, report)
     elif isinstance(event, NPCGoalCompleted):
         _validate_npc_goal_completed(state, event, report)
     elif isinstance(event, CharacterHealed):
@@ -660,6 +663,46 @@ def _validate_npc_item_location_observed(
                 "invalid_npc_item_observation",
                 f"{event.item_id} is still present at {event.location_id}",
             )
+
+
+def _validate_npc_fact_shared(
+    state: WorldState,
+    event: NPCFactShared,
+    report: ValidationReport,
+) -> None:
+    source = state.entities.get(event.source_npc_id)
+    receiver = state.entities.get(event.receiver_npc_id)
+    if not isinstance(source, NPC):
+        report.add_error("nonexistent_entity", f"missing fact-sharing source {event.source_npc_id}")
+        return
+    if not isinstance(receiver, NPC) or receiver.id == source.id:
+        report.add_error(
+            "invalid_npc_fact_share",
+            f"invalid fact-sharing receiver {event.receiver_npc_id}",
+        )
+        return
+    if event.fact_id not in state.facts:
+        report.add_error("invalid_npc_fact_share", f"missing shared fact {event.fact_id}")
+        return
+    if not source.state.alive or not source.state.conscious:
+        report.add_error("inactive_participant", f"{source.id} cannot share facts")
+    if not receiver.state.alive or not receiver.state.conscious:
+        report.add_error("inactive_participant", f"{receiver.id} cannot receive facts")
+    if source.state.current_location != receiver.state.current_location:
+        report.add_error(
+            "invalid_npc_fact_share",
+            "fact-sharing NPCs must be physically co-located",
+        )
+    if event.fact_id not in source.knowledge.facts_known:
+        report.add_error(
+            "npc_fact_not_known",
+            f"{source.id} attempted to share unknown fact {event.fact_id}",
+        )
+    if event.fact_id in receiver.knowledge.facts_known:
+        report.add_error(
+            "invalid_npc_fact_share",
+            f"{receiver.id} already knows fact {event.fact_id}",
+        )
 
 
 def _validate_npc_goal_completed(
