@@ -28,6 +28,7 @@ Key boundaries:
 - NPC autonomy uses scoped planning contexts, bounded typed intents, and deterministic resolution before any state change.
 - NPC-to-NPC fact sharing uses source-aware replayable events; the planner chooses a receiver only, while the resolver chooses an actually shareable canonical fact.
 - Social disclosure is data-driven: each fact may require a source→receiver relationship threshold, and forged restricted sharing is rejected by generic event validation.
+- Player-facing `TalkAction` reuses the same directed `SocialDisclosurePolicy`; blocked facts stay out of player knowledge and narration observations while eligible public facts remain deterministic fallbacks.
 - Scheduled off-screen simulation gives ordinary NPC goals and social diffusion independent canonical action budgets; background sharing never consumes movement/investigation capacity.
 - Narrative providers cannot mutate canonical state.
 - Provider failure happens before the state/event transaction is committed.
@@ -158,7 +159,7 @@ Run one explicit NPC social-information phase with:
 emergent-rpg npc-social-step --max-actions 3
 ```
 
-The social authority path remains separate from ordinary goal planning. Its planner ranks locally visible receivers using only the source NPC's directed relationship scores, but it still does not see receiver-private facts or choose a fact. The deterministic resolver computes source-known / receiver-unknown facts and filters them through each fact's canonical `disclosure_min_relationship`; missing source→receiver relationship entries are neutral score `0`, while ordinary facts default to public threshold `-100`. Generic event validation repeats the same policy so forged restricted sharing cannot bypass trust requirements. Ashfall Relay's `fact_relay_sabotage` is a real restricted clue requiring relationship score `20`. The same validated social path can run explicitly through `npc-social-step` or automatically as a bounded off-screen phase during due world-simulation cycles. See `docs/NPC_FACT_SHARING.md`, `docs/SOCIAL_DISCLOSURE.md`, and `docs/OFFSCREEN_SOCIAL_SIMULATION.md` for the invariants and verification evidence.
+The social authority path remains separate from ordinary goal planning. Its planner ranks locally visible receivers using only the source NPC's directed relationship scores, but it still does not see receiver-private facts or choose a fact. The deterministic resolver computes source-known / receiver-unknown facts and filters them through each fact's canonical `disclosure_min_relationship`; missing source→receiver relationship entries are neutral score `0`, while ordinary facts default to public threshold `-100`. Generic event validation repeats the same policy so forged restricted sharing cannot bypass trust requirements. Ashfall Relay's `fact_relay_sabotage` is a real restricted clue requiring relationship score `20`. Player-facing `talk` uses that same source-directed policy before emitting the ordinary player `FactDiscovered`, so a restricted fact can be withheld while another eligible public fact is revealed. Existing replayable NPC→player `RelationshipChanged` events can unlock later dialogue. The same social authority is therefore shared by player dialogue, explicit `npc-social-step`, and automatic off-screen simulation. See `docs/NPC_FACT_SHARING.md`, `docs/SOCIAL_DISCLOSURE.md`, `docs/OFFSCREEN_SOCIAL_SIMULATION.md`, and `docs/PLAYER_DIALOGUE_DISCLOSURE.md` for invariants and verification evidence.
 
 The current demo lets Dax pursue a location goal and Lio investigate a locally visible clue. Explicit `npc-step` and `npc-social-step` phases remain available for debugging/operator control, while accepted player actions also trigger deterministic off-screen goal and social simulation when the canonical world clock reaches a scheduled cadence.
 
@@ -190,11 +191,11 @@ mypy src/emergent_rpg
 pytest
 ```
 
-CI runs all three checks on Python 3.12, builds the wheel, verifies packaged browser assets, and executes the seeded 1,000-accepted-turn consistency gate. Provider, embedding, FastAPI, NPC social, and social-simulation integration tests remain offline.
+CI runs all three checks on Python 3.12, builds the wheel, verifies packaged browser assets, and executes the seeded 1,000-accepted-turn consistency gate. Provider, embedding, FastAPI, NPC social, social-simulation, and dialogue-disclosure integration tests remain offline.
 
 ## Current limitations
 
-Automatic off-screen NPC-to-NPC social diffusion is integrated, but player-facing `TalkAction` does not yet apply the same relationship-gated `SocialDisclosurePolicy`; that cross-layer dialogue gap is the next milestone. Richer combat/stat systems, authentication/multi-user API concerns, and neural embedding integration also remain future work.
+Player and NPC disclosure now share one canonical trust policy, but relationship progression still contains an Ashfall-specific generic-resolver branch that grants Arden trust based on a named mystery fact. Replacing that branch with data-driven canonical dialogue relationship rules is the next architecture milestone. Richer combat/stat systems, authentication/multi-user API concerns, and neural embedding integration also remain future work.
 
 The OpenAI-compatible provider currently targets the common `/chat/completions` JSON shape and intentionally supports text responses only. Live endpoint interoperability depends on the selected server/model and is not claimed by offline CI.
 
