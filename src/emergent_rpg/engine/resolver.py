@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 from emergent_rpg.domain.actions import (
     FreeformAction,
+    GiveAction,
     InspectAction,
     MoveAction,
     PlayerAction,
@@ -15,6 +16,8 @@ from emergent_rpg.domain.events import (
     Event,
     FactDiscovered,
     ItemAcquired,
+    NPCGoalCompleted,
+    PlayerItemGiven,
     PlayerMoved,
     RelationshipChanged,
     TimeAdvanced,
@@ -121,6 +124,58 @@ class DeterministicResolver:
                 observations=observations,
                 involved_entities={player.id},
                 tags={"item"},
+            )
+
+        if isinstance(action, GiveAction):
+            item = self._find_owned_item(state, action.item, player.id)
+            if item is None:
+                return ActionResult(accepted=False, reason="You do not have that item to give.")
+            if "portable" not in item.flags:
+                return ActionResult(accepted=False, reason="That item cannot be handed over.")
+            receiver = self._find_npc(state, action.receiver, location_id)
+            if receiver is None:
+                return ActionResult(accepted=False, reason="That person is not here to receive it.")
+            if not receiver.state.alive or not receiver.state.conscious:
+                return ActionResult(
+                    accepted=False,
+                    reason="They cannot receive anything right now.",
+                )
+            events: list[Event] = [
+                PlayerItemGiven(
+                    turn_number=turn,
+                    source_player_id=player.id,
+                    receiver_npc_id=receiver.id,
+                    item_id=item.id,
+                )
+            ]
+            matching_goals = sorted(
+                (
+                    goal
+                    for goal in receiver.planning_goals
+                    if goal.kind == "acquire_item"
+                    and goal.target_id == item.id
+                    and goal.id not in receiver.completed_goal_ids
+                    and goal.required_fact_ids <= receiver.knowledge.facts_known
+                ),
+                key=lambda goal: goal.id,
+            )
+            events.extend(
+                NPCGoalCompleted(
+                    turn_number=turn,
+                    npc_id=receiver.id,
+                    goal_id=goal.id,
+                    method="acquired_item",
+                    evidence_id=item.id,
+                )
+                for goal in matching_goals
+            )
+            events.append(TimeAdvanced(turn_number=turn, minutes=1))
+            return ActionResult(
+                accepted=True,
+                emitted_events=events,
+                observations=[f"You give {item.name} to {receiver.name}."],
+                involved_entities={player.id, receiver.id},
+                tags={"item", "handoff"},
             )
 
         if isinstance(action, InspectAction):
@@ -233,7 +288,7 @@ class DeterministicResolver:
                 accepted=False,
                 reason=(
                     "Freeform language is preserved for a pluggable parser; use move, inspect, "
-                    "talk, take, or wait in the deterministic demo."
+                    "talk, take, give, or wait in the deterministic demo."
                 ),
             )
         return ActionResult(accepted=False, reason="Unsupported action.")
@@ -267,6 +322,14 @@ class DeterministicResolver:
         return None
 
     @staticmethod
+    def _find_owned_item(state: WorldState, target: str, owner_id: str) -> Item | None:
+        key = target.casefold().strip()
+        for item in state.items.values():
+            if item.owner_id == owner_id and key in {item.id.casefold(), item.name.casefold()}:
+                return item
+        return None
+
+    @staticmethod
     def _find_npc(state: WorldState, target: str, location_id: str) -> NPC | None:
         key = target.casefold().strip()
         for entity in state.entities.values():
@@ -280,10 +343,8 @@ class DeterministicResolver:
 
     @staticmethod
     def _inspection_fact(state: WorldState, location_id: str, target: str) -> Fact | None:
+        tag = f"inspect:{location_id}:{target}"
         for fact in state.facts.values():
-            if (
-                f"inspect:{location_id}:{target}" in fact.tags
-                and MysteryGraph.can_discover_fact(state, fact.id, state.player_id)
-            ):
+            if tag in fact.tags and MysteryGraph.can_discover_fact(state, fact.id, state.player_id):
                 return fact
         return None

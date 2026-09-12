@@ -15,6 +15,7 @@ from emergent_rpg.domain.events import (
     NPCLearnedFact,
     NPCLocationMapped,
     NPCMoved,
+    PlayerItemGiven,
     PlayerMoved,
     RelationshipChanged,
     ScheduledLocationConditionApplied,
@@ -25,6 +26,7 @@ from emergent_rpg.domain.events import (
 )
 from emergent_rpg.domain.models import (
     NPC,
+    PlayerCharacter,
     ScheduledLocationConditionExpiry,
     StatusCondition,
     WorldState,
@@ -34,6 +36,31 @@ from emergent_rpg.engine.dialogue import DialogueRelationshipPolicy
 
 class ReductionError(ValueError):
     """Raised when an event cannot be reduced against the supplied state."""
+
+
+def _transfer_owned_item(
+    state: WorldState,
+    source_id: str,
+    receiver_id: str,
+    item_id: str,
+    *,
+    event_name: str,
+) -> None:
+    source = state.entities.get(source_id)
+    receiver = state.entities.get(receiver_id)
+    item = state.items.get(item_id)
+    if source is None or receiver is None or source.id == receiver.id:
+        raise ReductionError(f"{event_name} participants are invalid")
+    if item is None:
+        raise ReductionError(f"{event_name} item does not exist")
+    if item.owner_id != source.id or item.id not in source.state.inventory:
+        raise ReductionError(f"{event_name} source does not own item")
+    if item.id in receiver.state.inventory:
+        raise ReductionError(f"{event_name} receiver already owns item")
+    source.state.inventory.remove(item.id)
+    receiver.state.inventory.append(item.id)
+    item.owner_id = receiver.id
+    item.location_id = None
 
 
 def apply_event(state: WorldState, event: Event) -> WorldState:
@@ -63,18 +90,39 @@ def apply_event(state: WorldState, event: Event) -> WorldState:
         else:
             raise ReductionError("negative item observation does not match NPC belief")
     elif isinstance(event, NPCItemDelivered):
-        source = new_state.entities[event.source_npc_id]
+        source = new_state.entities.get(event.source_npc_id)
         if not isinstance(source, NPC):
             raise ReductionError("NPCItemDelivered source is not an NPC")
-        receiver = new_state.entities[event.receiver_id]
-        item = new_state.items[event.item_id]
-        if item.owner_id != source.id or item.id not in source.state.inventory:
-            raise ReductionError("NPCItemDelivered source does not own item")
-        source.state.inventory.remove(item.id)
-        if item.id not in receiver.state.inventory:
-            receiver.state.inventory.append(item.id)
-        item.owner_id = receiver.id
-        item.location_id = None
+        _transfer_owned_item(
+            new_state,
+            event.source_npc_id,
+            event.receiver_id,
+            event.item_id,
+            event_name="NPCItemDelivered",
+        )
+    elif isinstance(event, PlayerItemGiven):
+        source = new_state.entities.get(event.source_player_id)
+        receiver = new_state.entities.get(event.receiver_npc_id)
+        item = new_state.items.get(event.item_id)
+        if not isinstance(source, PlayerCharacter) or source.id != new_state.player_id:
+            raise ReductionError("PlayerItemGiven source is not the canonical player")
+        if not isinstance(receiver, NPC):
+            raise ReductionError("PlayerItemGiven receiver is not an NPC")
+        if not source.state.alive or not source.state.conscious:
+            raise ReductionError("PlayerItemGiven source cannot act")
+        if not receiver.state.alive or not receiver.state.conscious:
+            raise ReductionError("PlayerItemGiven receiver cannot receive an item")
+        if source.state.current_location != receiver.state.current_location:
+            raise ReductionError("PlayerItemGiven participants are not co-located")
+        if item is None or "portable" not in item.flags:
+            raise ReductionError("PlayerItemGiven item is not portable")
+        _transfer_owned_item(
+            new_state,
+            source.id,
+            receiver.id,
+            event.item_id,
+            event_name="PlayerItemGiven",
+        )
     elif isinstance(event, NPCFactShared):
         receiver = new_state.entities[event.receiver_npc_id]
         if not isinstance(receiver, NPC):
