@@ -8,7 +8,7 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import Session
 
 from emergent_rpg.domain.models import GameSession
-from emergent_rpg.persistence.db import Base, SQLiteStore, SessionRow
+from emergent_rpg.persistence.db import Base, SessionRow, SQLiteStore
 from emergent_rpg.persistence.schema import CURRENT_SCHEMA_VERSION, StoreSchemaError
 from emergent_rpg.world.demo import build_demo_world
 
