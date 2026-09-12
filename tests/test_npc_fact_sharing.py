@@ -31,22 +31,25 @@ def _co_locate(state, source_id: str, receiver_id: str, location_id: str = "oper
     return source, receiver
 
 
-def test_planner_share_fallback_names_receiver_but_not_fact() -> None:
+def test_social_planner_names_receiver_but_not_fact_without_changing_goal_plan() -> None:
     state = build_demo_world()
     arden, sera = _co_locate(state, "npc_arden", "npc_sera")
     arden.knowledge.facts_known = {"fact_blackout_window"}
     sera.knowledge.facts_known.clear()
 
     context = build_npc_planning_context(state, arden.id)
-    plan = DeterministicNPCPlanner().plan(context)
+    planner = DeterministicNPCPlanner()
+    ordinary = planner.plan(context)
+    social = planner.plan_fact_share(context)
 
-    assert plan.intents == [NPCShareFactIntent(receiver_id=sera.id)]
-    payload = plan.intents[0].model_dump()
+    assert ordinary.intents == []
+    assert social == NPCShareFactIntent(receiver_id=sera.id)
+    payload = social.model_dump()
     assert "fact_id" not in payload
     assert "fact_blackout_window" in context.known_fact_ids
 
 
-def test_actionable_structured_goal_precedes_social_fallback() -> None:
+def test_actionable_structured_goal_remains_in_ordinary_planner() -> None:
     state = build_demo_world()
     dax = state.entities["npc_dax"]
     lio = state.entities["npc_lio"]
@@ -57,12 +60,14 @@ def test_actionable_structured_goal_precedes_social_fallback() -> None:
 
     context = build_npc_planning_context(state, dax.id)
     assert lio.id in context.visible_npc_ids
-    plan = DeterministicNPCPlanner().plan(context)
+    planner = DeterministicNPCPlanner()
+    plan = planner.plan(context)
 
     assert len(plan.intents) == 1
     assert isinstance(plan.intents[0], NPCMoveIntent)
     assert plan.intents[0].goal_id == "dax_reach_yard"
     assert plan.intents[0].destination_id == "yard"
+    assert planner.plan_fact_share(context) == NPCShareFactIntent(receiver_id=lio.id)
 
 
 def test_resolver_selects_lexical_new_fact_and_updates_receiver_only() -> None:
@@ -173,7 +178,7 @@ def test_resolver_rejects_self_remote_and_no_new_fact_share_intents() -> None:
     assert duplicate_result.reason == "NPC has no new fact to share."
 
 
-def test_fact_share_persists_replays_and_triggers_receiver_inference(tmp_path: Path) -> None:
+def test_social_phase_persists_replays_and_triggers_receiver_inference(tmp_path: Path) -> None:
     state = build_demo_world()
     arden, sera = _co_locate(state, "npc_arden", "npc_sera")
     arden.knowledge.facts_known = {"fact_schedule"}
@@ -191,7 +196,7 @@ def test_fact_share_persists_replays_and_triggers_receiver_inference(tmp_path: P
     store.create_session(session, state)
     engine = GameEngine(store)
 
-    phase, after = engine.run_npc_phase(session.id, max_actions=1)
+    phase, after = engine.run_npc_social_phase(session.id, max_actions=1)
 
     share_events = [event for event in phase.emitted_events if isinstance(event, NPCFactShared)]
     inference_events = [event for event in phase.emitted_events if isinstance(event, FactInferred)]
@@ -219,6 +224,11 @@ def test_fact_share_persists_replays_and_triggers_receiver_inference(tmp_path: P
     }.issubset(after_sera.knowledge.facts_known)
     assert after.player_known_facts == before_player_facts
     assert engine.replay_session(session.id) == after
+
+    turns = store.list_turns(session.id)
+    assert len(turns) == 1
+    assert turns[0].raw_input == "[npc-social-phase]"
+    assert {"npc", "autonomous", "social"}.issubset(turns[0].tags)
 
     restarted = GameEngine(SQLiteStore(db_path))
     assert restarted.store.load_state(session.id) == after
