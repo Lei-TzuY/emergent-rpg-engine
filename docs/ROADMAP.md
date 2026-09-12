@@ -24,7 +24,12 @@ The project advances by coherent executable slices rather than placeholder subsy
 20. **Replayable NPC information exchange / fact sharing** — source-aware typed fact transfer between co-located NPCs, speaker-knowledge validation, receiver-only canonical updates, explicit bounded social execution, CLI integration, and replayable provenance without bulk private-memory copying. **Complete.**
 21. **Relationship-gated social disclosure / trust policy** — data-driven per-fact disclosure requirements, source→receiver relationship scoring, resolver-enforced eligibility, and deterministic selective sharing without exposing receiver-private knowledge to the planner. **Complete.**
 22. **Automatic off-screen social diffusion / simulation integration** — independent canonical social-action budget per simulation cycle, off-screen-only trust-gated fact propagation, ordinary NPC-budget isolation, atomic persistence/replay, and no player-facing metadata leakage. **Complete.**
-23. **NPC→player dialogue disclosure / trust-gated conversation** — reuse canonical social-disclosure policy for `TalkAction`, directed NPC→player trust thresholds, deterministic public fallback, and replayable relationship-based unlock across CLI/API/browser paths. **Next.**
+23. **NPC→player dialogue disclosure / trust-gated conversation** — canonical social-disclosure policy reused by `TalkAction`, directed NPC→player trust thresholds, deterministic public fallback, and replayable relationship-based unlock across CLI/API/browser paths. **Complete.**
+24. **Data-driven dialogue relationship rules** — canonical world-pack relationship rules, deterministic priority, replayable one-shot provenance, and generic resolver/reducer policy without Ashfall-specific branches. **Complete.**
+25. **Replayable NPC social relationship progression** — NPC fact sharing reuses the same canonical relationship-rule engine with source→receiver directionality, one-shot anti-farming, and explicit/off-screen execution parity. **Complete.**
+26. **Knowledge-gated reactive NPC goals** — canonical `required_fact_ids`, acting-NPC-only eligibility, planner/resolver/reducer backstops, and social-learning activation on later goal phases. **Complete.**
+27. **Autonomous NPC item acquisition / custody** — knowledge-scoped acquisition goals, existing `ItemAcquired` authority, generic custody validation, observer-scoped memory cleanup, persistence/replay, and off-screen execution. **Complete.**
+28. **Replayable item handoff / delivery goals** — canonical owner-to-owner custody transfer with exact source/receiver/item provenance, deterministic delivery planning, unique ownership, and replay-safe inventory movement. **Next.**
 
 ## Milestone 3 invariant
 
@@ -111,7 +116,7 @@ provider/parser name = ollama
 → default http://127.0.0.1:11434/v1
 → existing OpenAICompatibleClient transport
 → existing narration or action-parser boundary
-→ deterministic GameEngine authority unchanged
+→ deterministic resolver / transactional engine unchanged
 ```
 
 `EMERGENT_RPG_OLLAMA_MODEL` is explicit and required; base URL, proxy API key, timeout, temperature, and token budget have separate `EMERGENT_RPG_OLLAMA_*` controls. The preset does not inherit generic `EMERGENT_RPG_LLM_API_KEY`, preventing accidental credential bleed into a local endpoint. CI uses injected fake transport and never requires a live Ollama daemon.
@@ -419,18 +424,89 @@ The first fully green M22 implementation head `d1d5a1753381e5c3d81f656018ba31154
 
 For seed `20260911`, the long-run gate produced 1,058 submissions, 1,000 accepted turns, 58 deterministic rejections, **2,274 events**, 1,058 persisted turns, 1,000 episodes, and final canonical clock minute 4,361. Replay equality, state validity, monotonic clock/player knowledge/event log, item ownership, and event-id uniqueness all remained true with `failures=[]`. The event log increased by two from the M21 baseline while all other tracked continuity metrics stayed unchanged; these figures are correctness evidence, not performance measurements.
 
-## Promotion gate for Milestone 23
+## Milestone 23 invariant
 
-NPC-to-NPC disclosure now has one canonical policy across explicit and automatic execution, but player-facing deterministic dialogue still bypasses that policy. `TalkAction` currently selects the lexical NPC-known / player-unknown discoverable fact without consulting `Fact.disclosure_min_relationship`. The next coherent slice should close that cross-layer authority gap rather than invent another trust system:
+Player-facing dialogue now uses the same disclosure authority as NPC-to-NPC sharing:
 
 ```text
-player TalkAction targets local NPC
-→ candidate NPC-known / player-unknown facts
-→ ordinary MysteryGraph discovery prerequisites
-→ SocialDisclosurePolicy using NPC→player directed relationship
+local conscious NPC
+→ NPC-known / player-unknown facts
+→ MysteryGraph discovery gate
+→ SocialDisclosurePolicy using NPC → player relationship
 → lexical first eligible fact
 → ordinary FactDiscovered(observer=player)
-→ existing GameEngine validation / persistence / replay
+→ validation / narration / persistence / replay
 ```
 
-Public facts must remain available at neutral trust, while restricted facts require the speaking NPC's directed relationship toward the player; a reverse player→NPC score must not unlock disclosure. Existing replayable `RelationshipChanged` events should be able to unlock a restricted fact on a later conversation without direct state mutation or a dialogue-only trust store. If a restricted fact is blocked but another public candidate is eligible, dialogue should deterministically fall back to the eligible public fact. Talking with no eligible new fact remains a valid conversation/time advance but must not leak the restricted proposition. CLI, API, browser, and LLM-parsed `talk` inputs should all inherit the same resolver behavior rather than receiving transport-specific branches. Focused tests should prove directionality, public fallback, relationship unlock, SQLite replay, API-path parity, and provider-failure atomicity, followed by the existing 1,000-turn continuity gate.
+Restricted facts can be withheld while the conversation itself remains accepted. If a restricted lexical candidate is blocked but a public candidate is eligible, the resolver deterministically falls back to the public fact. Existing directed `RelationshipChanged` state can unlock a restricted fact on a later conversation, and CLI/API/browser/LLM-parsed talk inputs all converge on the same resolver path.
+
+The fully green M23 implementation head `03255797e789713787212b6983c6fc22bde19578` passed strict mypy across **46 source files**, **149 pytest tests**, and the real 1,000-turn gate with 1,058 submissions / 1,000 accepted / 58 rejected / 2,274 events / final clock 4,361 and `failures=[]`. Detailed evidence is in `docs/PLAYER_DIALOGUE_DISCLOSURE.md`.
+
+## Milestone 24 invariant
+
+Dialogue relationship progression is canonical world data rather than an Ashfall-specific resolver branch. `DialogueRelationshipRule` defines directed participants, fact prerequisites, bounded delta, priority, and one-shot behavior. Accepted dialogue may emit the existing `RelationshipChanged(rule_id=...)`, and reducer-side `DialogueRelationshipPolicy` independently revalidates the rule after any same-conversation fact discovery. Applied one-shot rule IDs are canonical replayed state, preventing farming.
+
+The fully green M24 implementation head `9f96bbf7150bf8284f4c35fb8f99d597ff769b70` passed strict mypy across **47 source files**, **156 pytest tests**, and the seeded 1,000-turn gate with 2,274 events and `failures=[]`. Detailed evidence is in `docs/DIALOGUE_RELATIONSHIP_RULES.md`.
+
+## Milestone 25 invariant
+
+NPC-to-NPC social execution reuses the same relationship-rule engine after an accepted `NPCFactShared`. Event ordering is `NPCFactShared → optional RelationshipChanged`, so reducer provenance validation sees the receiver's newly canonical fact before evaluating the rule. The consequence remains inside the same social action budget slot; source→receiver directionality, one-shot anti-farming, explicit/off-screen parity, persistence, and replay all use the existing authority path.
+
+The fully green M25 implementation head `0db148349b69cbfc348b84d30ee2ce80c0409e0a` passed strict mypy across **47 source files**, **159 pytest tests**, and the seeded 1,000-turn gate with 2,274 events and `failures=[]`. Detailed evidence is in `docs/NPC_SOCIAL_RELATIONSHIP_RULES.md`.
+
+## Milestone 26 invariant
+
+Goal eligibility is a deterministic projection of each NPC's own canonical knowledge:
+
+```text
+NPCGoal.required_fact_ids
++ acting NPC facts_known
+→ planner filters dormant goals
+→ deterministic priority / route / intent
+→ resolver repeats prerequisite gate
+→ ordinary events
+→ reducer backstop before NPCGoalCompleted
+→ persistence / replay
+```
+
+Empty prerequisite sets preserve older worlds. Objective truth or another observer's knowledge cannot activate a goal. A fact learned during the off-screen social phase becomes actionable only in a later ordinary goal phase, preserving cadence ordering.
+
+The fully green M26 implementation head `cb62a3445288a4defbc7f6e2a861f200916bdfdb` passed strict mypy across **47 source files**, **164 pytest tests**, and the seeded 1,000-turn gate with 2,274 events and `failures=[]`. Detailed evidence is in `docs/NPC_REACTIVE_GOALS.md`.
+
+## Milestone 27 invariant
+
+NPC item acquisition extends the existing custody authority rather than creating a second inventory subsystem:
+
+```text
+knowledge-gated acquire_item goal
++ NPC own item-location belief / known routes / local visibility
+→ deterministic planner
+→ movement / stale local search / NPCAcquireIntent
+→ deterministic resolver
+→ existing ItemAcquired
+→ NPCItemLocationObserved(present=False)
+→ NPCGoalCompleted(method="acquired_item")
+→ validation / persistence / replay
+```
+
+The planner never receives authoritative remote item location. Generic `ItemAcquired` validation requires an existing alive/conscious actor, a local unowned portable item, and matching origin. Goal completion is valid only when canonical owner and inventory agree. The older investigate-item resolver contract remains backwards-compatible, and acquisition-specific rejection reasons do not overwrite it.
+
+The fully green M27 implementation head `2e67bb2b132c6a67fb3d56b67f866dd3df308312` passed strict mypy across **47 source files**, **175 pytest tests**, and the seeded 1,000-turn gate with 1,058 submissions / 1,000 accepted / 58 rejected / **2,274 events** / final clock 4,361 and `failures=[]`. Detailed evidence is in `docs/NPC_ITEM_ACQUISITION.md`.
+
+## Promotion gate for Milestone 28
+
+Milestone 27 deliberately rejects acquisition from an existing owner. The next coherent frontier is replayable owner-to-owner item handoff and delivery goals:
+
+```text
+source canonically owns item
++ delivery target / co-location requirement
+→ knowledge-scoped NPC delivery planning
+→ typed transfer intent
+→ deterministic resolver
+→ canonical custody-transfer event
+→ reducer atomically removes source inventory + adds receiver inventory
+→ delivery goal completion
+→ persistence / replay
+```
+
+The transfer path must preserve unique ownership and exact source/receiver/item provenance. Remote handoff, inactive participants, source-without-item, wrong receiver, non-transferable targets, and forged completion must be rejected independently by validation. Item-location beliefs remain observer-scoped and must not globally synchronize simply because custody changes. Explicit and off-screen execution, SQLite restart/replay, provider-failure atomicity, and the existing 1,000-turn consistency gate must remain green.
