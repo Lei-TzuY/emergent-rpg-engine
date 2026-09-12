@@ -73,6 +73,53 @@ def _read_schema_version(engine: Engine, inspector: Inspector) -> int:
     return version
 
 
+def _validate_declared_version(version: int) -> None:
+    if version > CURRENT_SCHEMA_VERSION:
+        raise StoreSchemaError(
+            f"database schema version {version} is newer than supported "
+            f"version {CURRENT_SCHEMA_VERSION}"
+        )
+    if version < CURRENT_SCHEMA_VERSION:
+        raise StoreSchemaError(
+            f"database schema version {version} requires a migration to "
+            f"version {CURRENT_SCHEMA_VERSION}"
+        )
+
+
+def inspect_schema_compatible(engine: Engine, metadata: MetaData) -> tuple[int, bool]:
+    """Validate an existing schema without creating or adopting anything.
+
+    Returns the compatible schema version plus whether an explicit schema marker was
+    present. An exact pre-version legacy shape is accepted as current-compatible but
+    remains untouched; callers that need adoption must use ``ensure_schema_compatible``.
+    """
+
+    expected = _expected_application_columns(metadata)
+    inspector = inspect(engine)
+    tables = set(inspector.get_table_names())
+    if not tables:
+        raise StoreSchemaError("database contains no application schema")
+
+    if SCHEMA_METADATA_TABLE not in tables:
+        _validate_application_shape(
+            inspector,
+            tables,
+            expected,
+            allow_schema_metadata=False,
+        )
+        return CURRENT_SCHEMA_VERSION, False
+
+    version = _read_schema_version(engine, inspector)
+    _validate_declared_version(version)
+    _validate_application_shape(
+        inspector,
+        tables,
+        expected,
+        allow_schema_metadata=True,
+    )
+    return version, True
+
+
 def _create_version_metadata(engine: Engine) -> None:
     with engine.begin() as connection:
         connection.execute(
@@ -123,16 +170,7 @@ def ensure_schema_compatible(engine: Engine, metadata: MetaData) -> int:
         return CURRENT_SCHEMA_VERSION
 
     version = _read_schema_version(engine, inspector)
-    if version > CURRENT_SCHEMA_VERSION:
-        raise StoreSchemaError(
-            f"database schema version {version} is newer than supported "
-            f"version {CURRENT_SCHEMA_VERSION}"
-        )
-    if version < CURRENT_SCHEMA_VERSION:
-        raise StoreSchemaError(
-            f"database schema version {version} requires a migration to "
-            f"version {CURRENT_SCHEMA_VERSION}"
-        )
+    _validate_declared_version(version)
     _validate_application_shape(
         inspector,
         tables,
