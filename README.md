@@ -28,6 +28,7 @@ Key boundaries:
 - NPC autonomy uses scoped planning contexts, bounded typed intents, and deterministic resolution before any state change.
 - NPC-to-NPC fact sharing uses source-aware replayable events; the planner chooses a receiver only, while the resolver chooses an actually shareable canonical fact.
 - Social disclosure is data-driven: each fact may require a source→receiver relationship threshold, and forged restricted sharing is rejected by generic event validation.
+- Scheduled off-screen simulation gives ordinary NPC goals and social diffusion independent canonical action budgets; background sharing never consumes movement/investigation capacity.
 - Narrative providers cannot mutate canonical state.
 - Provider failure happens before the state/event transaction is committed.
 - Memory retrieval uses recent turns + persisted episodes + canonical facts; optional vectors only rerank existing episodes.
@@ -157,15 +158,17 @@ Run one explicit NPC social-information phase with:
 emergent-rpg npc-social-step --max-actions 3
 ```
 
-The social phase is deliberately separate from ordinary goal planning and automatic off-screen simulation. Its planner ranks locally visible receivers using only the source NPC's directed relationship scores, but it still does not see receiver-private facts or choose a fact. The deterministic resolver computes source-known / receiver-unknown facts and filters them through each fact's canonical `disclosure_min_relationship`; missing source→receiver relationship entries are neutral score `0`, while ordinary facts default to public threshold `-100`. Generic event validation repeats the same policy so forged restricted sharing cannot bypass trust requirements. Ashfall Relay's `fact_relay_sabotage` is a real restricted clue requiring relationship score `20`. See `docs/NPC_FACT_SHARING.md` and `docs/SOCIAL_DISCLOSURE.md` for the invariants and verification evidence.
+The social authority path remains separate from ordinary goal planning. Its planner ranks locally visible receivers using only the source NPC's directed relationship scores, but it still does not see receiver-private facts or choose a fact. The deterministic resolver computes source-known / receiver-unknown facts and filters them through each fact's canonical `disclosure_min_relationship`; missing source→receiver relationship entries are neutral score `0`, while ordinary facts default to public threshold `-100`. Generic event validation repeats the same policy so forged restricted sharing cannot bypass trust requirements. Ashfall Relay's `fact_relay_sabotage` is a real restricted clue requiring relationship score `20`. The same validated social path can run explicitly through `npc-social-step` or automatically as a bounded off-screen phase during due world-simulation cycles. See `docs/NPC_FACT_SHARING.md`, `docs/SOCIAL_DISCLOSURE.md`, and `docs/OFFSCREEN_SOCIAL_SIMULATION.md` for the invariants and verification evidence.
 
-The current demo lets Dax pursue a location goal and Lio investigate a locally visible clue. Explicit `npc-step` phases remain available for debugging, while accepted player actions also trigger deterministic off-screen simulation when the canonical world clock reaches a scheduled cadence.
+The current demo lets Dax pursue a location goal and Lio investigate a locally visible clue. Explicit `npc-step` and `npc-social-step` phases remain available for debugging/operator control, while accepted player actions also trigger deterministic off-screen goal and social simulation when the canonical world clock reaches a scheduled cadence.
 
 ## Deterministic world simulation
 
 The canonical world carries a five-minute simulation cadence and replayable next-due cursor. Accepted player actions that advance time can trigger bounded off-screen NPC cycles before the turn is committed. Each processed slot is recorded as a `SimulationCycleProcessed` event, so the scheduling decision itself can be replayed and validated rather than existing as hidden process state.
 
-Automatic cycles skip NPCs currently sharing the player's location. This keeps visible conversations/interactions stable while still allowing remote NPCs to move, investigate evidence, and update private knowledge. A large time jump processes at most the configured catch-up budget in one player turn; any remaining backlog stays explicit for later turns. Player narration and episodic-memory metadata do not receive hidden NPC identities merely because a background cycle occurred.
+Each due NPC slot first runs the ordinary off-screen goal phase under `max_npc_actions_per_cycle`, then a separately bounded off-screen social phase under `max_social_actions_per_cycle`, then emits the simulation marker. Both phases use the same candidate state and commit atomically with the triggering player turn. The social source set is recomputed after ordinary NPC movement, so an NPC that just entered the player's location cannot immediately take part in hidden social exchange.
+
+Automatic cycles skip NPCs currently sharing the player's location. This keeps visible conversations/interactions stable while still allowing remote NPCs to move, investigate evidence, update private knowledge, and exchange disclosure-eligible facts. A large time jump processes at most the configured catch-up budget in one player turn; any remaining backlog stays explicit for later turns. Player narration and episodic-memory metadata do not receive hidden NPC identities merely because a background goal or social cycle occurred.
 
 ## Optional vector memory retrieval
 
@@ -187,11 +190,11 @@ mypy src/emergent_rpg
 pytest
 ```
 
-CI runs all three checks on Python 3.12, builds the wheel, verifies packaged browser assets, and executes the seeded 1,000-accepted-turn consistency gate. Provider, embedding, FastAPI, and NPC social integration tests remain offline.
+CI runs all three checks on Python 3.12, builds the wheel, verifies packaged browser assets, and executes the seeded 1,000-accepted-turn consistency gate. Provider, embedding, FastAPI, NPC social, and social-simulation integration tests remain offline.
 
 ## Current limitations
 
-NPC fact sharing is currently an explicit bounded social phase with relationship-gated disclosure. Automatic off-screen social diffusion/scheduling is not yet integrated into world-simulation cycles. Richer combat/stat systems, authentication/multi-user API concerns, and neural embedding integration also remain future work.
+Automatic off-screen NPC-to-NPC social diffusion is integrated, but player-facing `TalkAction` does not yet apply the same relationship-gated `SocialDisclosurePolicy`; that cross-layer dialogue gap is the next milestone. Richer combat/stat systems, authentication/multi-user API concerns, and neural embedding integration also remain future work.
 
 The OpenAI-compatible provider currently targets the common `/chat/completions` JSON shape and intentionally supports text responses only. Live endpoint interoperability depends on the selected server/model and is not claimed by offline CI.
 
