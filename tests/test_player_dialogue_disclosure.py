@@ -167,7 +167,9 @@ def test_api_dialogue_uses_same_disclosure_policy_for_low_and_high_trust(
 
     assert high.status_code == 200
     assert high.json()["accepted"] is True
-    assert proposition in high.json()["state"]["known_facts"]
+    assert high.json()["state"]["known_facts"] == [
+        {"id": RESTRICTED_FACT_ID, "proposition": proposition}
+    ]
 
     store = SQLiteStore(db_path)
     assert GameEngine(store).replay_session(low_id) == store.load_state(low_id)
