@@ -10,6 +10,7 @@ from emergent_rpg.domain.events import (
     NPCItemLocationObserved,
     NPCLocationMapped,
     NPCMoved,
+    RelationshipChanged,
 )
 from emergent_rpg.domain.models import NPC, NPCGoal, WorldState
 from emergent_rpg.domain.npc_actions import (
@@ -21,6 +22,7 @@ from emergent_rpg.domain.npc_actions import (
     NPCPlanningContext,
     NPCShareFactIntent,
 )
+from emergent_rpg.engine.dialogue import DialogueRelationshipPolicy
 from emergent_rpg.engine.environment import EnvironmentalRules
 from emergent_rpg.engine.mystery import MysteryGraph
 from emergent_rpg.engine.navigation import deterministic_next_hop
@@ -259,16 +261,33 @@ class DeterministicNPCResolver:
                 reason="NPC relationship is below disclosure requirements.",
             )
         fact_id = shareable[0]
+        events: list[Event] = [
+            NPCFactShared(
+                turn_number=turn_number,
+                source_npc_id=source.id,
+                receiver_npc_id=receiver.id,
+                fact_id=fact_id,
+            )
+        ]
+        relationship_rule = DialogueRelationshipPolicy.next_rule(
+            state,
+            source.id,
+            receiver.id,
+            additional_listener_fact_ids={fact_id},
+        )
+        if relationship_rule is not None:
+            events.append(
+                RelationshipChanged(
+                    turn_number=turn_number,
+                    source_id=source.id,
+                    target_id=receiver.id,
+                    delta=relationship_rule.delta,
+                    rule_id=relationship_rule.id,
+                )
+            )
         return NPCActionResult(
             accepted=True,
-            emitted_events=[
-                NPCFactShared(
-                    turn_number=turn_number,
-                    source_npc_id=source.id,
-                    receiver_npc_id=receiver.id,
-                    fact_id=fact_id,
-                )
-            ],
+            emitted_events=events,
             tags={"npc_dialogue", "npc_fact_share"},
         )
 
