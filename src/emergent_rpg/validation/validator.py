@@ -124,7 +124,10 @@ def validate_state(
                         "invalid_npc_goal",
                         f"{entity_id} goal {goal.id} references missing location {goal.target_id}",
                     )
-                if goal.kind in {"investigate_item", "acquire_item"} and goal.target_id not in state.items:
+                if (
+                    goal.kind in {"investigate_item", "acquire_item"}
+                    and goal.target_id not in state.items
+                ):
                     report.add_error(
                         "invalid_npc_goal",
                         f"{entity_id} goal {goal.id} references missing item {goal.target_id}",
@@ -607,7 +610,10 @@ def _validate_item_acquired(
     if item.location_id != actor.state.current_location:
         report.add_error("invalid_item_acquisition", "item is not at the actor's location")
     if event.from_location != item.location_id:
-        report.add_error("invalid_item_acquisition", "acquisition origin does not match item location")
+        report.add_error(
+            "invalid_item_acquisition",
+            "acquisition origin does not match item location",
+        )
     if "portable" not in item.flags:
         report.add_error("invalid_item_acquisition", f"item {item.id} is not portable")
 
