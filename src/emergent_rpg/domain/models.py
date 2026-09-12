@@ -90,6 +90,7 @@ class NPCGoal(BaseModel):
     kind: Literal["reach_location", "investigate_item"]
     target_id: str
     priority: int = Field(default=0, ge=-100, le=100)
+    required_fact_ids: set[FactId] = Field(default_factory=set)
 
 
 class NPC(Entity):
@@ -247,7 +248,7 @@ class WorldState(BaseModel):
     factions: set[str] = Field(default_factory=set)
 
     @model_validator(mode="after")
-    def dialogue_relationship_rule_consistency(self) -> WorldState:
+    def canonical_reference_consistency(self) -> WorldState:
         rule_ids = [rule.id for rule in self.dialogue_relationship_rules]
         if len(rule_ids) != len(set(rule_ids)):
             raise ValueError("dialogue relationship rule ids must be unique")
@@ -263,6 +264,13 @@ class WorldState(BaseModel):
             missing_facts = rule.required_listener_fact_ids - self.facts.keys()
             if missing_facts:
                 raise ValueError("dialogue relationship rule references missing facts")
+        for entity in self.entities.values():
+            if not isinstance(entity, NPC):
+                continue
+            for goal in entity.planning_goals:
+                missing_goal_facts = goal.required_fact_ids - self.facts.keys()
+                if missing_goal_facts:
+                    raise ValueError("NPC goal prerequisites must reference configured facts")
         return self
 
     def player(self) -> PlayerCharacter:
