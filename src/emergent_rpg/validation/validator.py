@@ -10,6 +10,7 @@ from emergent_rpg.domain.events import (
     FactDiscovered,
     FactInferred,
     NPCGoalCompleted,
+    NPCLocationMapped,
     NPCMoved,
     PlayerMoved,
     ScheduledLocationConditionApplied,
@@ -130,6 +131,14 @@ def validate_state(
                     "nonexistent_entity_reference",
                     f"{entity_id} knows missing facts: {sorted(missing)}",
                 )
+            missing_mapped_locations = (
+                entity.knowledge.mapped_locations - state.locations.keys()
+            )
+            if missing_mapped_locations:
+                report.add_error(
+                    "invalid_npc_map",
+                    f"{entity_id} mapped missing locations: {sorted(missing_mapped_locations)}",
+                )
 
     missing_player_facts = state.player_known_facts - state.facts.keys()
     if missing_player_facts:
@@ -152,6 +161,11 @@ def validate_state(
             (event.location_id, event.condition_code)
             for event in transition_events or []
             if isinstance(event, ScheduledLocationConditionExpired)
+        }
+        authorized_mappings = {
+            (event.npc_id, event.location_id)
+            for event in transition_events or []
+            if isinstance(event, NPCLocationMapped)
         }
         for location_id, old_location in previous.locations.items():
             if location_id in state.locations:
@@ -177,6 +191,31 @@ def validate_state(
                         "impossible_resurrection",
                         f"{entity_id} changed from dead to alive",
                     )
+                if isinstance(old_entity, NPC) and isinstance(new_entity, NPC):
+                    removed_mappings = (
+                        old_entity.knowledge.mapped_locations
+                        - new_entity.knowledge.mapped_locations
+                    )
+                    if removed_mappings:
+                        report.add_error(
+                            "npc_map_went_backward",
+                            f"{entity_id} forgot mapped locations: {sorted(removed_mappings)}",
+                        )
+                    added_mappings = (
+                        new_entity.knowledge.mapped_locations
+                        - old_entity.knowledge.mapped_locations
+                    )
+                    unauthorized_mappings = {
+                        location_id
+                        for location_id in added_mappings
+                        if (entity_id, location_id) not in authorized_mappings
+                    }
+                    if unauthorized_mappings:
+                        report.add_error(
+                            "npc_map_changed_without_observation",
+                            f"{entity_id} learned map locations without events: "
+                            f"{sorted(unauthorized_mappings)}",
+                        )
     return report
 
 
@@ -186,6 +225,8 @@ def validate_event_preconditions(state: WorldState, event: Event) -> ValidationR
         _validate_player_moved(state, event, report)
     elif isinstance(event, NPCMoved):
         _validate_npc_moved(state, event, report)
+    elif isinstance(event, NPCLocationMapped):
+        _validate_npc_location_mapped(state, event, report)
     elif isinstance(event, NPCGoalCompleted):
         _validate_npc_goal_completed(state, event, report)
     elif isinstance(event, CharacterHealed):
@@ -499,6 +540,34 @@ def _validate_npc_moved(state: WorldState, event: NPCMoved, report: ValidationRe
         report.add_error("inactive_participant", f"{event.npc_id} cannot move")
     if any(condition.incapacitating for condition in npc.state.status_conditions):
         report.add_error("inactive_participant", f"{event.npc_id} movement is blocked")
+
+
+def _validate_npc_location_mapped(
+    state: WorldState,
+    event: NPCLocationMapped,
+    report: ValidationReport,
+) -> None:
+    npc = state.entities.get(event.npc_id)
+    if not isinstance(npc, NPC):
+        report.add_error("nonexistent_entity", f"missing NPC mapper {event.npc_id}")
+        return
+    if event.location_id not in state.locations:
+        report.add_error("invalid_npc_map", f"mapped location {event.location_id} does not exist")
+        return
+    if not npc.state.alive or not npc.state.conscious:
+        report.add_error("inactive_participant", f"{event.npc_id} cannot observe a location")
+        return
+    if npc.state.current_location != event.location_id:
+        report.add_error(
+            "invalid_npc_map",
+            f"{event.npc_id} cannot map remote location {event.location_id}",
+        )
+        return
+    if event.location_id in npc.knowledge.mapped_locations:
+        report.add_error(
+            "invalid_npc_map",
+            f"{event.npc_id} already mapped location {event.location_id}",
+        )
 
 
 def _validate_npc_goal_completed(
