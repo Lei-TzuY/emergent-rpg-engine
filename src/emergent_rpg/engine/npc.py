@@ -287,7 +287,10 @@ class DeterministicNPCResolver:
         elif goal.kind == "investigate_item":
             item = state.items.get(goal.target_id)
             if item is None:
-                return NPCActionResult(accepted=False, reason="Investigation target does not exist.")
+                return NPCActionResult(
+                    accepted=False,
+                    reason="Investigation target does not exist.",
+                )
             if item.owner_id == npc.id or item.location_id == location.id:
                 return NPCActionResult(
                     accepted=False,
