@@ -87,7 +87,7 @@ class PlayerCharacter(Entity):
 
 class NPCGoal(BaseModel):
     id: str
-    kind: Literal["reach_location", "investigate_item"]
+    kind: Literal["reach_location", "investigate_item", "acquire_item"]
     target_id: str
     priority: int = Field(default=0, ge=-100, le=100)
     required_fact_ids: set[FactId] = Field(default_factory=set)
