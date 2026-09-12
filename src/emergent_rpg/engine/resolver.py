@@ -22,6 +22,7 @@ from emergent_rpg.domain.events import (
 from emergent_rpg.domain.models import NPC, Fact, Item, WorldState
 from emergent_rpg.engine.environment import EnvironmentalRules
 from emergent_rpg.engine.mystery import MysteryGraph
+from emergent_rpg.engine.social import SocialDisclosurePolicy
 
 
 class ActionResult(BaseModel):
@@ -175,6 +176,11 @@ class DeterministicResolver:
                 fact_id
                 for fact_id in npc.knowledge.facts_known - state.player_known_facts
                 if MysteryGraph.can_discover_fact(state, fact_id, player.id)
+                and SocialDisclosurePolicy.can_disclose(
+                    state.facts[fact_id],
+                    npc,
+                    player.id,
+                )
             )
             if revealable:
                 fact_id = revealable[0]
