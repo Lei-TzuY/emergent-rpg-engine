@@ -29,6 +29,12 @@ class TakeAction(ActionModel):
     target: str = Field(min_length=1)
 
 
+class GiveAction(ActionModel):
+    kind: Literal["give"] = "give"
+    item: str = Field(min_length=1)
+    receiver: str = Field(min_length=1)
+
+
 class WaitAction(ActionModel):
     kind: Literal["wait"] = "wait"
     minutes: int = Field(default=10, ge=1, le=24 * 60)
@@ -40,7 +46,7 @@ class FreeformAction(ActionModel):
 
 
 PlayerAction = Annotated[
-    MoveAction | InspectAction | TalkAction | TakeAction | WaitAction | FreeformAction,
+    MoveAction | InspectAction | TalkAction | TakeAction | GiveAction | WaitAction | FreeformAction,
     Field(discriminator="kind"),
 ]
 
