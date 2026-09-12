@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from enum import Enum
 from hashlib import sha256
 from pathlib import Path
 from typing import Literal
@@ -44,9 +45,34 @@ class SessionArchive(BaseModel):
     episodes: list[Episode] = Field(default_factory=list)
 
 
+def _canonical_value(value: object) -> object:
+    if isinstance(value, BaseModel):
+        return _canonical_value(value.model_dump(mode="python"))
+    if isinstance(value, Enum):
+        return _canonical_value(value.value)
+    if isinstance(value, dict):
+        return {
+            str(key): _canonical_value(item)
+            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+        }
+    if isinstance(value, (set, frozenset)):
+        items = [_canonical_value(item) for item in value]
+        items.sort(
+            key=lambda item: json.dumps(
+                item,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        )
+        return {"__set__": items}
+    if isinstance(value, (list, tuple)):
+        return [_canonical_value(item) for item in value]
+    return value
+
+
 def _canonical_state_json(state: WorldState) -> str:
     return json.dumps(
-        state.model_dump(mode="json"),
+        _canonical_value(state),
         sort_keys=True,
         separators=(",", ":"),
     )
