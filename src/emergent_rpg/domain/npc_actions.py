@@ -23,6 +23,11 @@ class NPCInspectIntent(NPCIntentModel):
     item_id: str
 
 
+class NPCAcquireIntent(NPCIntentModel):
+    kind: Literal["acquire"] = "acquire"
+    item_id: str
+
+
 class NPCCompleteGoalIntent(NPCIntentModel):
     kind: Literal["complete_goal"] = "complete_goal"
 
@@ -35,7 +40,11 @@ class NPCShareFactIntent(BaseModel):
 
 
 NPCIntent = Annotated[
-    NPCMoveIntent | NPCInspectIntent | NPCCompleteGoalIntent | NPCShareFactIntent,
+    NPCMoveIntent
+    | NPCInspectIntent
+    | NPCAcquireIntent
+    | NPCCompleteGoalIntent
+    | NPCShareFactIntent,
     Field(discriminator="kind"),
 ]
 

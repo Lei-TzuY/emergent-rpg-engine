@@ -52,7 +52,7 @@ class NPCGoalCompleted(DomainEvent):
     type: Literal["npc_goal_completed"] = "npc_goal_completed"
     npc_id: str
     goal_id: str
-    method: Literal["reached_location", "inspected_item"]
+    method: Literal["reached_location", "inspected_item", "acquired_item"]
     evidence_id: str
 
 
