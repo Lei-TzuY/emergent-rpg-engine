@@ -305,37 +305,48 @@ class WorldState(BaseModel):
         if unknown_turn_in_applied:
             raise ValueError("applied item turn-in rules must reference configured rules")
 
-        for rule in self.dialogue_relationship_rules:
-            speaker = self.entities.get(rule.speaker_id)
+        for dialogue_rule in self.dialogue_relationship_rules:
+            speaker = self.entities.get(dialogue_rule.speaker_id)
             if not isinstance(speaker, NPC):
                 raise ValueError("dialogue relationship rule speaker must reference an NPC")
-            if rule.listener_id not in self.entities:
+            if dialogue_rule.listener_id not in self.entities:
                 raise ValueError("dialogue relationship rule listener must reference an entity")
-            missing_facts = rule.required_listener_fact_ids - self.facts.keys()
+            missing_facts = dialogue_rule.required_listener_fact_ids - self.facts.keys()
             if missing_facts:
                 raise ValueError("dialogue relationship rule references missing facts")
 
-        for rule in self.item_turn_in_consequence_rules:
-            receiver = self.entities.get(rule.receiver_npc_id)
+        for turn_in_rule in self.item_turn_in_consequence_rules:
+            receiver = self.entities.get(turn_in_rule.receiver_npc_id)
             if not isinstance(receiver, NPC):
                 raise ValueError("item turn-in rule receiver must reference an NPC")
-            if rule.item_id not in self.items:
+            if turn_in_rule.item_id not in self.items:
                 raise ValueError("item turn-in rule must reference a configured item")
-            required_facts = rule.required_player_fact_ids | rule.required_receiver_fact_ids
+            required_facts = (
+                turn_in_rule.required_player_fact_ids
+                | turn_in_rule.required_receiver_fact_ids
+            )
             if required_facts - self.facts.keys():
                 raise ValueError("item turn-in rule prerequisites must reference configured facts")
-            if rule.reward_fact_id is not None:
-                reward_fact = self.facts.get(rule.reward_fact_id)
+            if turn_in_rule.reward_fact_id is not None:
+                reward_fact = self.facts.get(turn_in_rule.reward_fact_id)
                 if reward_fact is None:
                     raise ValueError("item turn-in rule reward fact must be configured")
                 if reward_fact.discoverability == "inferred":
                     raise ValueError("item turn-in rule cannot directly reward an inferred fact")
-            if rule.required_goal_id is not None:
+            if turn_in_rule.required_goal_id is not None:
                 goal = next(
-                    (goal for goal in receiver.planning_goals if goal.id == rule.required_goal_id),
+                    (
+                        goal
+                        for goal in receiver.planning_goals
+                        if goal.id == turn_in_rule.required_goal_id
+                    ),
                     None,
                 )
-                if goal is None or goal.kind != "acquire_item" or goal.target_id != rule.item_id:
+                if (
+                    goal is None
+                    or goal.kind != "acquire_item"
+                    or goal.target_id != turn_in_rule.item_id
+                ):
                     raise ValueError(
                         "item turn-in rule goal must be a matching acquire_item goal"
                     )
