@@ -9,6 +9,7 @@ from emergent_rpg.domain.events import (
     Event,
     FactDiscovered,
     FactInferred,
+    ItemAcquired,
     NPCFactShared,
     NPCGoalCompleted,
     NPCItemLocationObserved,
@@ -123,7 +124,7 @@ def validate_state(
                         "invalid_npc_goal",
                         f"{entity_id} goal {goal.id} references missing location {goal.target_id}",
                     )
-                if goal.kind == "investigate_item" and goal.target_id not in state.items:
+                if goal.kind in {"investigate_item", "acquire_item"} and goal.target_id not in state.items:
                     report.add_error(
                         "invalid_npc_goal",
                         f"{entity_id} goal {goal.id} references missing item {goal.target_id}",
@@ -262,6 +263,8 @@ def validate_event_preconditions(state: WorldState, event: Event) -> ValidationR
         _validate_player_moved(state, event, report)
     elif isinstance(event, NPCMoved):
         _validate_npc_moved(state, event, report)
+    elif isinstance(event, ItemAcquired):
+        _validate_item_acquired(state, event, report)
     elif isinstance(event, NPCLocationMapped):
         _validate_npc_location_mapped(state, event, report)
     elif isinstance(event, NPCItemLocationObserved):
@@ -583,6 +586,32 @@ def _validate_npc_moved(state: WorldState, event: NPCMoved, report: ValidationRe
         report.add_error("inactive_participant", f"{event.npc_id} movement is blocked")
 
 
+def _validate_item_acquired(
+    state: WorldState,
+    event: ItemAcquired,
+    report: ValidationReport,
+) -> None:
+    actor = state.entities.get(event.actor_id)
+    if actor is None:
+        report.add_error("nonexistent_entity", f"missing item-acquisition actor {event.actor_id}")
+        return
+    item = state.items.get(event.item_id)
+    if item is None:
+        report.add_error("nonexistent_entity", f"missing acquired item {event.item_id}")
+        return
+    if not actor.state.alive or not actor.state.conscious:
+        report.add_error("inactive_participant", f"{event.actor_id} cannot acquire an item")
+    if item.owner_id is not None or event.from_owner is not None:
+        report.add_error("invalid_item_acquisition", "owned-item transfer is not supported")
+        return
+    if item.location_id != actor.state.current_location:
+        report.add_error("invalid_item_acquisition", "item is not at the actor's location")
+    if event.from_location != item.location_id:
+        report.add_error("invalid_item_acquisition", "acquisition origin does not match item location")
+    if "portable" not in item.flags:
+        report.add_error("invalid_item_acquisition", f"item {item.id} is not portable")
+
+
 def _validate_npc_location_mapped(
     state: WorldState,
     event: NPCLocationMapped,
@@ -748,6 +777,15 @@ def _validate_npc_goal_completed(
             report.add_error("invalid_npc_goal", "inspection evidence item does not exist")
         elif item.owner_id != npc.id and item.location_id != npc.state.current_location:
             report.add_error("invalid_npc_goal", "inspection evidence is not accessible to NPC")
+    elif event.method == "acquired_item":
+        if goal.kind != "acquire_item" or goal.target_id != event.evidence_id:
+            report.add_error("invalid_npc_goal", "goal completion does not match acquisition goal")
+            return
+        item = state.items.get(event.evidence_id)
+        if item is None:
+            report.add_error("invalid_npc_goal", "acquisition evidence item does not exist")
+        elif item.owner_id != npc.id or item.id not in npc.state.inventory:
+            report.add_error("invalid_npc_goal", "NPC does not own acquisition evidence")
 
 
 def _known_facts_for_observer(
