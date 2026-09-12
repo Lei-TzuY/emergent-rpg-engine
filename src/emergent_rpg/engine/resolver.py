@@ -136,7 +136,10 @@ class DeterministicResolver:
             if receiver is None:
                 return ActionResult(accepted=False, reason="That person is not here to receive it.")
             if not receiver.state.alive or not receiver.state.conscious:
-                return ActionResult(accepted=False, reason="They cannot receive anything right now.")
+                return ActionResult(
+                    accepted=False,
+                    reason="They cannot receive anything right now.",
+                )
             events: list[Event] = [
                 PlayerItemGiven(
                     turn_number=turn,
