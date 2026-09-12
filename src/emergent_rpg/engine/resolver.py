@@ -50,6 +50,14 @@ class DeterministicResolver:
             destination = self._resolve_destination(state, location_id, action.destination)
             if destination is None:
                 return ActionResult(accepted=False, reason="There is no such exit from here.")
+            access = self.environmental_rules.route_access(state, location_id, destination)
+            if not access.allowed:
+                blockers = ", ".join(access.condition_names)
+                destination_name = state.locations[destination].name
+                return ActionResult(
+                    accepted=False,
+                    reason=f"The route to {destination_name} is blocked by: {blockers}.",
+                )
             traversal = self.environmental_rules.traversal_cost(state, location_id)
             observations = [f"You travel to {state.locations[destination].name}."]
             tags = {"movement"}

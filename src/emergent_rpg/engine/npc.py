@@ -17,6 +17,7 @@ from emergent_rpg.domain.npc_actions import (
     NPCPlan,
     NPCPlanningContext,
 )
+from emergent_rpg.engine.environment import EnvironmentalRules
 from emergent_rpg.engine.mystery import MysteryGraph
 
 
@@ -48,11 +49,12 @@ def build_npc_planning_context(state: WorldState, npc_id: str) -> NPCPlanningCon
         raise ValueError(f"{npc_id} is not an NPC")
     location = state.locations[entity.state.current_location]
     known_ids = set(entity.knowledge.facts_known)
+    accessible_exits = EnvironmentalRules().accessible_exits(state, location.id)
     return NPCPlanningContext(
         npc_id=entity.id,
         npc_name=entity.name,
         current_location_id=location.id,
-        exits=dict(location.exits),
+        exits=accessible_exits,
         visible_item_ids={
             item.id for item in state.items.values() if item.location_id == location.id
         },
@@ -170,6 +172,13 @@ class DeterministicNPCResolver:
         location = state.locations[npc.state.current_location]
         if intent.destination_id not in location.exits.values():
             return NPCActionResult(accepted=False, reason="Destination is not a local exit.")
+        access = EnvironmentalRules().route_access(state, location.id, intent.destination_id)
+        if not access.allowed:
+            blockers = ", ".join(access.condition_names)
+            return NPCActionResult(
+                accepted=False,
+                reason=f"NPC route is blocked by: {blockers}.",
+            )
         events: list[Event] = [
             NPCMoved(
                 turn_number=turn_number,

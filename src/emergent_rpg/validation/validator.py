@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Iterable
 from typing import Literal
 
 from emergent_rpg.domain.events import (
@@ -16,7 +17,8 @@ from emergent_rpg.domain.events import (
     SimulationCycleProcessed,
     TimeAdvanced,
 )
-from emergent_rpg.domain.models import NPC, WorldState
+from emergent_rpg.domain.models import NPC, LocationCondition, PlayerCharacter, WorldState
+from emergent_rpg.engine.environment import EnvironmentalRules
 from emergent_rpg.validation.models import ValidationReport
 
 
@@ -181,10 +183,7 @@ def validate_state(
 def validate_event_preconditions(state: WorldState, event: Event) -> ValidationReport:
     report = ValidationReport()
     if isinstance(event, PlayerMoved):
-        if event.entity_id not in state.entities:
-            report.add_error("nonexistent_entity", f"missing mover {event.entity_id}")
-        if event.from_location not in state.locations or event.to_location not in state.locations:
-            report.add_error("impossible_character_location", "move references missing location")
+        _validate_player_moved(state, event, report)
     elif isinstance(event, NPCMoved):
         _validate_npc_moved(state, event, report)
     elif isinstance(event, NPCGoalCompleted):
@@ -260,7 +259,14 @@ def _validate_scheduled_world_state(state: WorldState, report: ValidationReport)
             continue
         target = (activation.location_id, activation.condition.code)
         activation_targets.append(target)
-        if activation.condition.code in state.locations[activation.location_id].active_conditions:
+        location = state.locations[activation.location_id]
+        _validate_condition_route_targets(
+            activation.location_id,
+            location.exits.values(),
+            activation.condition,
+            report,
+        )
+        if activation.condition.code in location.active_conditions:
             report.add_error(
                 "invalid_scheduled_world_event",
                 f"{activation.id} targets an already-active location condition",
@@ -307,6 +313,29 @@ def _validate_scheduled_world_state(state: WorldState, report: ValidationReport)
                     "invalid_location_condition",
                     f"{location_id} condition key/code mismatch for {key}",
                 )
+            _validate_condition_route_targets(
+                location_id,
+                location.exits.values(),
+                condition,
+                report,
+            )
+
+
+def _validate_condition_route_targets(
+    location_id: str,
+    local_destinations: Iterable[str],
+    condition: LocationCondition,
+    report: ValidationReport,
+) -> None:
+    if condition.route is None:
+        return
+    local = set(local_destinations)
+    invalid = condition.route.blocked_destination_ids - local
+    if invalid:
+        report.add_error(
+            "invalid_environment_rule",
+            f"{location_id} condition {condition.code} blocks non-local exits: {sorted(invalid)}",
+        )
 
 
 def _validate_expected_world_event(
@@ -418,6 +447,33 @@ def _validate_scheduled_location_condition_expiry(
         )
 
 
+def _validate_player_moved(
+    state: WorldState,
+    event: PlayerMoved,
+    report: ValidationReport,
+) -> None:
+    player = state.entities.get(event.entity_id)
+    if not isinstance(player, PlayerCharacter) or event.entity_id != state.player_id:
+        report.add_error("nonexistent_entity", f"missing player mover {event.entity_id}")
+        return
+    if event.from_location != player.state.current_location:
+        report.add_error("impossible_character_location", "player move origin does not match state")
+        return
+    if event.to_location not in state.locations:
+        report.add_error("impossible_character_location", "player move references missing location")
+        return
+    location = state.locations[event.from_location]
+    if event.to_location not in location.exits.values():
+        report.add_error("impossible_character_location", "player destination is not a local exit")
+        return
+    access = EnvironmentalRules().route_access(state, event.from_location, event.to_location)
+    if not access.allowed:
+        report.add_error(
+            "blocked_environmental_route",
+            f"player route is blocked by {access.condition_names}",
+        )
+
+
 def _validate_npc_moved(state: WorldState, event: NPCMoved, report: ValidationReport) -> None:
     npc = state.entities.get(event.npc_id)
     if not isinstance(npc, NPC):
@@ -432,6 +488,13 @@ def _validate_npc_moved(state: WorldState, event: NPCMoved, report: ValidationRe
     location = state.locations[event.from_location]
     if event.to_location not in location.exits.values():
         report.add_error("impossible_character_location", "NPC destination is not a local exit")
+        return
+    access = EnvironmentalRules().route_access(state, event.from_location, event.to_location)
+    if not access.allowed:
+        report.add_error(
+            "blocked_environmental_route",
+            f"NPC route is blocked by {access.condition_names}",
+        )
     if not npc.state.alive or not npc.state.conscious:
         report.add_error("inactive_participant", f"{event.npc_id} cannot move")
     if any(condition.incapacitating for condition in npc.state.status_conditions):

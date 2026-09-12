@@ -17,7 +17,8 @@ The project advances by coherent executable slices rather than placeholder subsy
 13. **Scheduled world events / environmental simulation** — canonical future-event queue, deterministic due-time execution, replayable schedule consumption, bounded catch-up, API/UI-visible active location conditions, and atomic integration with NPC simulation. **Complete.**
 14. **Environmental rules / traversal hazards** — declarative active-condition traversal effects, deterministic additive movement cost, ordinary event emission, player-visible explanation, and long-run replay evidence. **Complete.**
 15. **Environmental condition lifecycle / expiry** — canonical lifespans, typed validated expiry events, explicit replayable expiry queues, bounded lifecycle processing, provenance-aware removal, and restoration of baseline rules. **Complete.**
-16. **Environmental route access / closures** — data-driven blocked exits, deterministic player/NPC enforcement, planner-visible route filtering, player-visible closure explanation, and automatic route restoration after expiry. **Next.**
+16. **Environmental route access / closures** — data-driven blocked exits, deterministic player/NPC enforcement, parser/API/CLI/UI projection, validator backstop, and automatic route restoration after expiry. **Complete.**
+17. **Knowledge-scoped NPC multi-hop navigation / rerouting** — explicit NPC route knowledge, bounded deterministic path selection over known topology, dynamic closure-aware replanning, and resolver-validated step execution without global-world omniscience. **Next.**
 
 ## Milestone 3 invariant
 
@@ -241,10 +242,31 @@ The demo Ashfall Yard squall activates at Day 1 08:20 and expires at 08:40. Its 
 
 The first fully green M15 implementation candidate passed 97 pytest tests plus the seeded 1,000-accepted-turn evaluation. That run produced 1,058 submissions, 1,000 accepted turns, 58 rejections, 2,270 events, 1,000 episodes, and final canonical clock minute 4,361. Replay equality, state validity, monotonic clock/knowledge/event log, item ownership, and event-id uniqueness all remained true with `failures=[]`. These are correctness results, not performance measurements.
 
-## Promotion gate for Milestone 16
+## Milestone 16 invariant
 
-Environmental conditions should next affect route legality, not only traversal cost. The rule must remain data-driven: active canonical condition payloads may identify blocked destination/location ids, while no resolver branch may special-case `ash_squall` or another content name.
+Environmental route access is derived from canonical active conditions rather than by mutating topology:
 
-Player movement must reject a blocked local exit without emitting movement/time events. NPC planning context must omit blocked exits so autonomous planning does not repeatedly propose impossible routes, while the NPC resolver must independently reject a forged blocked move intent. The player-facing API/UI should explain currently blocked exits without exposing future schedule metadata. Expiry of the responsible condition must automatically restore the route through ordinary lifecycle replay.
+```text
+Location.exits + active LocationCondition.route payloads
+→ EnvironmentalRules.route_access()
+→ accessible exits / blocked exits
+→ player resolver + NPC planning/resolver
+→ independent movement-event validation
+→ ordinary reducer / persistence / replay
+```
 
-Tests must cover player rejection/state immutability, NPC planner filtering, forged NPC intent rejection, multiple-condition composition, API/UI explanation, automatic reopening after expiry, replay/restart equality, provider/simulation atomicity where applicable, and the existing 1,000-turn continuity gate.
+`RouteEffect` identifies blocked local destination ids. State validation rejects non-local route targets, and neither the player nor NPC resolver contains a condition-name branch. Blocked player actions emit no movement/time events; forged `PlayerMoved` and `NPCMoved` events are independently rejected by validator preconditions.
+
+NPC planning receives only currently accessible local exits, so it does not intentionally propose a route already blocked by the active environment. The NPC resolver remains a second backstop for forged intents. The action-parser visible state, Web API, CLI, and browser all use the same current route policy and explain active blockers without exposing future scheduled-event ids or due times.
+
+The demo Ashfall squall temporarily blocks Yard → Glass Ridge from 08:20 until its typed expiry at 08:40 while retaining its existing traversal-cost effect on routes that remain open. Because `Location.exits` is never rewritten, expiry automatically restores the Ridge route through ordinary lifecycle replay; there is no separate unblock event.
+
+The first fully green M16 implementation head passed 104 pytest tests plus the seeded 1,000-accepted-turn evaluation. That run produced 1,058 submissions, 1,000 accepted turns, 58 deterministic rejections, 2,270 events, 1,000 episodes, and final canonical clock minute 4,361. Replay equality, state validity, monotonic clock/knowledge/event log, item ownership, and event-id uniqueness all remained true with `failures=[]`. These figures are correctness evidence, not performance measurements.
+
+## Promotion gate for Milestone 17
+
+NPC `reach_location` goals currently only yield a move intent when the goal target is a directly adjacent accessible exit. Multi-hop navigation must not be implemented by handing the planner the entire `WorldState`, because the existing NPC architecture deliberately scopes planning to what an NPC can know.
+
+The next vertical slice should introduce explicit canonical NPC navigation knowledge (known locations/routes or an equivalent bounded map representation), project only that knowledge into `NPCPlanningContext`, and choose the next hop with a deterministic bounded path algorithm and stable tie-breaking. Active route closures must cause safe replanning when they affect a known next hop, while unknown remote hazards must not become omniscient planner input. Every chosen step must still pass the existing NPC resolver and movement-event validator.
+
+Tests should cover multi-hop goal completion over several simulation cycles, deterministic equal-length path choice, rerouting around a currently known closure, no route through unknown/unmapped topology, forged intent rejection, replay/restart equality, off-screen simulation behavior, and the existing 1,000-turn continuity gate.
