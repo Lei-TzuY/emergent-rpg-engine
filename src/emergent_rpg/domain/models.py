@@ -87,10 +87,23 @@ class PlayerCharacter(Entity):
 
 class NPCGoal(BaseModel):
     id: str
-    kind: Literal["reach_location", "investigate_item", "acquire_item"]
+    kind: Literal["reach_location", "investigate_item", "acquire_item", "deliver_item"]
     target_id: str
     priority: int = Field(default=0, ge=-100, le=100)
     required_fact_ids: set[FactId] = Field(default_factory=set)
+    receiver_id: EntityId | None = None
+    delivery_location_id: LocationId | None = None
+
+    @model_validator(mode="after")
+    def delivery_configuration(self) -> NPCGoal:
+        if self.kind == "deliver_item":
+            if self.receiver_id is None or self.delivery_location_id is None:
+                raise ValueError(
+                    "deliver_item goals require receiver_id and delivery_location_id"
+                )
+        elif self.receiver_id is not None or self.delivery_location_id is not None:
+            raise ValueError("delivery fields are only valid for deliver_item goals")
+        return self
 
 
 class NPC(Entity):
@@ -271,6 +284,17 @@ class WorldState(BaseModel):
                 missing_goal_facts = goal.required_fact_ids - self.facts.keys()
                 if missing_goal_facts:
                     raise ValueError("NPC goal prerequisites must reference configured facts")
+                if goal.kind == "deliver_item":
+                    if goal.target_id not in self.items:
+                        raise ValueError("NPC delivery goal must reference a configured item")
+                    if goal.receiver_id not in self.entities:
+                        raise ValueError("NPC delivery goal must reference a configured receiver")
+                    if goal.receiver_id == entity.id:
+                        raise ValueError("NPC delivery goal receiver must differ from source NPC")
+                    if goal.delivery_location_id not in self.locations:
+                        raise ValueError(
+                            "NPC delivery goal must reference a configured delivery location"
+                        )
         return self
 
     def player(self) -> PlayerCharacter:
