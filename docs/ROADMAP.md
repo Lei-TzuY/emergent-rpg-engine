@@ -29,7 +29,8 @@ The project advances by coherent executable slices rather than placeholder subsy
 25. **Replayable NPC social relationship progression** — NPC fact sharing reuses the same canonical relationship-rule engine with source→receiver directionality, one-shot anti-farming, and explicit/off-screen execution parity. **Complete.**
 26. **Knowledge-gated reactive NPC goals** — canonical `required_fact_ids`, acting-NPC-only eligibility, planner/resolver/reducer backstops, and social-learning activation on later goal phases. **Complete.**
 27. **Autonomous NPC item acquisition / custody** — knowledge-scoped acquisition goals, existing `ItemAcquired` authority, generic custody validation, observer-scoped memory cleanup, persistence/replay, and off-screen execution. **Complete.**
-28. **Replayable item handoff / delivery goals** — canonical owner-to-owner custody transfer with exact source/receiver/item provenance, deterministic delivery planning, unique ownership, and replay-safe inventory movement. **Next.**
+28. **Replayable item handoff / delivery goals** — canonical owner-to-owner custody transfer with exact source/receiver/item/goal provenance, knowledge-scoped rendezvous planning, unique ownership, and replay-safe inventory movement. **Complete.**
+29. **Player→NPC item handoff / quest turn-in** — typed player `GiveAction`, local receiver visibility, deterministic custody transfer, parser/API/browser parity, transactional rejection, and replay-safe player-to-NPC inventory movement. **Next.**
 
 ## Milestone 3 invariant
 
@@ -493,20 +494,45 @@ The planner never receives authoritative remote item location. Generic `ItemAcqu
 
 The fully green M27 implementation head `2e67bb2b132c6a67fb3d56b67f866dd3df308312` passed strict mypy across **47 source files**, **175 pytest tests**, and the seeded 1,000-turn gate with 1,058 submissions / 1,000 accepted / 58 rejected / **2,274 events** / final clock 4,361 and `failures=[]`. Detailed evidence is in `docs/NPC_ITEM_ACQUISITION.md`.
 
-## Promotion gate for Milestone 28
+## Milestone 28 invariant
 
-Milestone 27 deliberately rejects acquisition from an existing owner. The next coherent frontier is replayable owner-to-owner item handoff and delivery goals:
+NPC delivery is a replayable owner-to-owner custody transition coupled to a knowledge-scoped rendezvous goal rather than remote receiver tracking:
 
 ```text
-source canonically owns item
-+ delivery target / co-location requirement
-→ knowledge-scoped NPC delivery planning
-→ typed transfer intent
+knowledge-gated deliver_item goal
++ source canonical custody
++ configured receiver + rendezvous location
++ source-owned mapped topology
+→ deterministic planner routes only to rendezvous
+→ receiver must become locally visible / co-located
+→ NPCDeliverIntent
 → deterministic resolver
-→ canonical custody-transfer event
-→ reducer atomically removes source inventory + adds receiver inventory
-→ delivery goal completion
+→ NPCItemDelivered(source, receiver, item, goal)
+→ generic event validation
+→ atomic canonical custody transfer
+→ NPCGoalCompleted(method="delivered_item")
 → persistence / replay
 ```
 
-The transfer path must preserve unique ownership and exact source/receiver/item provenance. Remote handoff, inactive participants, source-without-item, wrong receiver, non-transferable targets, and forged completion must be rejected independently by validation. Item-location beliefs remain observer-scoped and must not globally synchronize simply because custody changes. Explicit and off-screen execution, SQLite restart/replay, provider-failure atomicity, and the existing 1,000-turn consistency gate must remain green.
+The planner does not receive the receiver's remote live location. Reaching the configured rendezvous while the receiver is absent produces no delivery intent; the source does not omnisciently chase the receiver. `NPCItemDelivered` carries exact source/receiver/item/goal provenance and mutates the existing canonical `Item.owner_id` plus source/receiver inventories atomically, without introducing another inventory store. The generic validator independently enforces co-location, configured rendezvous, active participants, source custody, receiver uniqueness, portability, and goal consistency. Goal completion is valid only after receiver custody is canonical and source custody is gone.
+
+Item-location beliefs remain observer-specific and are not globally synchronized merely because custody changes. Focused regressions cover deterministic multi-hop Bunkhouse → Yard → Operations → Archive delivery, absent/wrong/remote/inactive receiver rejection, wrong-location/source-without-item/nonportable rejection, forged transfer and forged goal-completion rejection, knowledge prerequisites, stale-belief isolation, SQLite restart/replay, and off-screen simulation under the ordinary NPC budget.
+
+The fully green M28 implementation head `7fbe17d0bfa79dadf3056634e17e5649e9801a32` passed standard wheel/package checks, browser-asset verification, Ruff, strict mypy across **47 source files**, **185 pytest tests**, and the seeded 1,000-accepted-turn evaluation plus JSON verifier. For seed `20260911`, the long-run gate produced 1,058 submissions, 1,000 accepted turns, 58 deterministic rejections, 2,274 events, 1,058 persisted turns, 1,000 episodes, and final canonical clock minute 4,361. Replay equality, state validity, monotonic clock/player knowledge/event log, item ownership, and unique event IDs all remained true with `failures=[]`. Detailed evidence is in `docs/NPC_ITEM_DELIVERY.md`.
+
+## Promotion gate for Milestone 29
+
+Milestone 28 completes NPC-source delivery, including NPC delivery to the player when the player is the configured co-located receiver. The reciprocal player action surface still cannot hand an owned item to an NPC. The next coherent slice should add a player-facing handoff without bypassing the existing parser/resolver/event authority:
+
+```text
+player-owned inventory item
++ locally visible active NPC receiver
+→ deterministic or structured GiveAction(item, receiver)
+→ ordinary player resolver
+→ typed canonical custody transfer
+→ generic event validation
+→ reducer removes player inventory + adds NPC inventory
+→ narration / persistence / replay
+```
+
+The deterministic parser and structured LLM parser must expose only player-visible item/receiver names, not NPC-private state. Remote, missing, inactive, self/invalid, nonportable, unowned, or duplicate-custody transfers must be rejected without partial mutation. Provider/narration failure must preserve the existing transactional zero-commit guarantee. CLI/API/browser raw-text execution, persistence/replay, player-visible state projection, and the real 1,000-turn consistency gate must remain green.
