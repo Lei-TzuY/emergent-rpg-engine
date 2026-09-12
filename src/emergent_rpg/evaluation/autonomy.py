@@ -99,7 +99,7 @@ def run_autonomy_integration_evaluation(
     final_state = store.load_state(session.id)
     events = store.load_events(session.id)
     event_ids = [event.event_id for event in events]
-    event_type_counts = dict(Counter(event.type for event in events))
+    event_type_counts: dict[str, int] = dict(Counter(str(event.type) for event in events))
     milestones = _milestone_checks(final_state, event_type_counts)
     failures = [name for name, passed in milestones.items() if not passed]
 
