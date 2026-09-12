@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from emergent_rpg.persistence.db import SQLiteStore, SessionRow
+from emergent_rpg.persistence.db import SessionRow, SQLiteStore
 from emergent_rpg.persistence.verification import verify_session
 
 
@@ -42,9 +42,11 @@ def _sha256_file(path: Path) -> str:
 def _sqlite_backup(source: Path, destination: Path) -> None:
     source_uri = f"{source.resolve().as_uri()}?mode=ro"
     try:
-        with closing(sqlite3.connect(source_uri, uri=True, timeout=5.0)) as source_db:
-            with closing(sqlite3.connect(destination, timeout=5.0)) as destination_db:
-                source_db.backup(destination_db)
+        with (
+            closing(sqlite3.connect(source_uri, uri=True, timeout=5.0)) as source_db,
+            closing(sqlite3.connect(destination, timeout=5.0)) as destination_db,
+        ):
+            source_db.backup(destination_db)
     except sqlite3.Error as exc:
         raise DatabaseSnapshotError(f"SQLite backup failed: {exc}") from exc
 
