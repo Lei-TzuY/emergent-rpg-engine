@@ -27,8 +27,15 @@ class NPCCompleteGoalIntent(NPCIntentModel):
     kind: Literal["complete_goal"] = "complete_goal"
 
 
+class NPCShareFactIntent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["share_fact"] = "share_fact"
+    receiver_id: str
+
+
 NPCIntent = Annotated[
-    NPCMoveIntent | NPCInspectIntent | NPCCompleteGoalIntent,
+    NPCMoveIntent | NPCInspectIntent | NPCCompleteGoalIntent | NPCShareFactIntent,
     Field(discriminator="kind"),
 ]
 
