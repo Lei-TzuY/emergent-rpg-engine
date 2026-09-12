@@ -9,6 +9,7 @@ from emergent_rpg.domain.events import (
     ItemAcquired,
     ItemDropped,
     NPCGoalCompleted,
+    NPCItemLocationObserved,
     NPCLearnedFact,
     NPCLocationMapped,
     NPCMoved,
@@ -48,6 +49,16 @@ def apply_event(state: WorldState, event: Event) -> WorldState:
         if not isinstance(npc, NPC):
             raise ReductionError("NPCLocationMapped target is not an NPC")
         npc.knowledge.mapped_locations.add(event.location_id)
+    elif isinstance(event, NPCItemLocationObserved):
+        npc = new_state.entities[event.npc_id]
+        if not isinstance(npc, NPC):
+            raise ReductionError("NPCItemLocationObserved target is not an NPC")
+        if event.present:
+            npc.knowledge.item_location_beliefs[event.item_id] = event.location_id
+        elif npc.knowledge.item_location_beliefs.get(event.item_id) == event.location_id:
+            del npc.knowledge.item_location_beliefs[event.item_id]
+        else:
+            raise ReductionError("negative item observation does not match NPC belief")
     elif isinstance(event, NPCGoalCompleted):
         npc = new_state.entities[event.npc_id]
         if not isinstance(npc, NPC):

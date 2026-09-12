@@ -10,6 +10,7 @@ from emergent_rpg.domain.events import (
     FactDiscovered,
     FactInferred,
     NPCGoalCompleted,
+    NPCItemLocationObserved,
     NPCLocationMapped,
     NPCMoved,
     PlayerMoved,
@@ -139,6 +140,22 @@ def validate_state(
                     "invalid_npc_map",
                     f"{entity_id} mapped missing locations: {sorted(missing_mapped_locations)}",
                 )
+            missing_belief_items = (
+                entity.knowledge.item_location_beliefs.keys() - state.items.keys()
+            )
+            if missing_belief_items:
+                report.add_error(
+                    "invalid_npc_item_belief",
+                    f"{entity_id} remembers missing items: {sorted(missing_belief_items)}",
+                )
+            missing_belief_locations = (
+                set(entity.knowledge.item_location_beliefs.values()) - state.locations.keys()
+            )
+            if missing_belief_locations:
+                report.add_error(
+                    "invalid_npc_item_belief",
+                    f"{entity_id} remembers missing locations: {sorted(missing_belief_locations)}",
+                )
 
     missing_player_facts = state.player_known_facts - state.facts.keys()
     if missing_player_facts:
@@ -216,6 +233,24 @@ def validate_state(
                             f"{entity_id} learned map locations without events: "
                             f"{sorted(unauthorized_mappings)}",
                         )
+
+                    expected_item_beliefs = dict(
+                        old_entity.knowledge.item_location_beliefs
+                    )
+                    for event in transition_events or []:
+                        if not isinstance(event, NPCItemLocationObserved):
+                            continue
+                        if event.npc_id != entity_id:
+                            continue
+                        if event.present:
+                            expected_item_beliefs[event.item_id] = event.location_id
+                        elif expected_item_beliefs.get(event.item_id) == event.location_id:
+                            del expected_item_beliefs[event.item_id]
+                    if new_entity.knowledge.item_location_beliefs != expected_item_beliefs:
+                        report.add_error(
+                            "npc_item_belief_changed_without_observation",
+                            f"{entity_id} item-location memory does not match observation events",
+                        )
     return report
 
 
@@ -227,6 +262,8 @@ def validate_event_preconditions(state: WorldState, event: Event) -> ValidationR
         _validate_npc_moved(state, event, report)
     elif isinstance(event, NPCLocationMapped):
         _validate_npc_location_mapped(state, event, report)
+    elif isinstance(event, NPCItemLocationObserved):
+        _validate_npc_item_location_observed(state, event, report)
     elif isinstance(event, NPCGoalCompleted):
         _validate_npc_goal_completed(state, event, report)
     elif isinstance(event, CharacterHealed):
@@ -568,6 +605,61 @@ def _validate_npc_location_mapped(
             "invalid_npc_map",
             f"{event.npc_id} already mapped location {event.location_id}",
         )
+
+
+def _validate_npc_item_location_observed(
+    state: WorldState,
+    event: NPCItemLocationObserved,
+    report: ValidationReport,
+) -> None:
+    npc = state.entities.get(event.npc_id)
+    if not isinstance(npc, NPC):
+        report.add_error("nonexistent_entity", f"missing NPC observer {event.npc_id}")
+        return
+    item = state.items.get(event.item_id)
+    if item is None:
+        report.add_error("invalid_npc_item_observation", f"missing item {event.item_id}")
+        return
+    if event.location_id not in state.locations:
+        report.add_error(
+            "invalid_npc_item_observation",
+            f"observation location {event.location_id} does not exist",
+        )
+        return
+    if not npc.state.alive or not npc.state.conscious:
+        report.add_error("inactive_participant", f"{event.npc_id} cannot observe an item")
+        return
+    if npc.state.current_location != event.location_id:
+        report.add_error(
+            "invalid_npc_item_observation",
+            f"{event.npc_id} cannot observe remote location {event.location_id}",
+        )
+        return
+
+    remembered_location = npc.knowledge.item_location_beliefs.get(event.item_id)
+    item_is_present = item.location_id == event.location_id
+    if event.present:
+        if not item_is_present:
+            report.add_error(
+                "invalid_npc_item_observation",
+                f"{event.item_id} is not present at {event.location_id}",
+            )
+        elif remembered_location == event.location_id:
+            report.add_error(
+                "invalid_npc_item_observation",
+                f"{event.npc_id} already remembers {event.item_id} at {event.location_id}",
+            )
+    else:
+        if remembered_location != event.location_id:
+            report.add_error(
+                "invalid_npc_item_observation",
+                f"{event.npc_id} has no matching belief to invalidate",
+            )
+        if item_is_present:
+            report.add_error(
+                "invalid_npc_item_observation",
+                f"{event.item_id} is still present at {event.location_id}",
+            )
 
 
 def _validate_npc_goal_completed(

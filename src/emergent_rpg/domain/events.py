@@ -33,6 +33,14 @@ class NPCLocationMapped(DomainEvent):
     location_id: str
 
 
+class NPCItemLocationObserved(DomainEvent):
+    type: Literal["npc_item_location_observed"] = "npc_item_location_observed"
+    npc_id: str
+    item_id: str
+    location_id: str
+    present: bool
+
+
 class NPCGoalCompleted(DomainEvent):
     type: Literal["npc_goal_completed"] = "npc_goal_completed"
     npc_id: str
@@ -135,6 +143,7 @@ Event = Annotated[
     PlayerMoved
     | NPCMoved
     | NPCLocationMapped
+    | NPCItemLocationObserved
     | NPCGoalCompleted
     | ItemAcquired
     | ItemDropped

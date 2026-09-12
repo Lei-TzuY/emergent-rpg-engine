@@ -20,7 +20,8 @@ The project advances by coherent executable slices rather than placeholder subsy
 16. **Environmental route access / closures** — data-driven blocked exits, deterministic player/NPC enforcement, parser/API/CLI/UI projection, validator backstop, and automatic route restoration after expiry. **Complete.**
 17. **Knowledge-scoped NPC multi-hop navigation / rerouting** — explicit NPC route knowledge, bounded deterministic path selection over known topology, dynamic closure-aware replanning, resolver-validated step execution, persistence, and replay without global-world omniscience. **Complete.**
 18. **Replayable NPC map learning / route discovery** — typed observation-driven expansion of NPC map knowledge, physical-presence validation, reducer-owned knowledge updates, monotonic provenance, off-screen simulation integration, and persistence/replay without cross-observer leakage. **Complete.**
-19. **Knowledge-scoped NPC item pursuit / search** — replayable observer-specific item-location beliefs, pursuit over known topology, stale-belief correction by local observation, and deterministic local inspection without global item-truth leakage. **Next.**
+19. **Knowledge-scoped NPC item pursuit / search** — replayable observer-specific item-location beliefs, pursuit over known topology, stale-belief correction by local observation, and deterministic local inspection without global item-truth leakage. **Complete.**
+20. **Replayable NPC information exchange / fact sharing** — source-aware typed fact transfer between co-located NPCs, speaker-knowledge validation, receiver-only canonical updates, and replayable provenance without bulk private-memory copying. **Next.**
 
 ## Milestone 3 invariant
 
@@ -80,7 +81,7 @@ accepted player events advance canonical clock
 → one atomic player-turn commit
 ```
 
-The scheduler never mutates state directly. `SimulationCycleProcessed` must match the exact canonical cursor and cannot be applied before world time reaches that minute. Automatic cycles skip NPCs currently co-located with the player, preventing hidden background execution from invalidating an interaction that is visibly in progress. Catch-up is bounded per player turn, and backlog remains explicit in the cursor for later turns. Off-screen NPC identities and private consequences are not copied into the player-facing turn/episode memory surface.
+The scheduler never mutates state directly. `SimulationCycleProcessed` must match the exact current cursor and cannot be applied before world time reaches that minute. Automatic cycles skip NPCs currently co-located with the player, preventing hidden background execution from invalidating an interaction that is visibly in progress. Catch-up is bounded per player turn, and backlog remains explicit in the cursor for later turns. Off-screen NPC identities and private consequences are not copied into the player-facing turn/episode memory surface.
 
 ## Milestone 7 invariant
 
@@ -314,20 +315,40 @@ The first fully green M18 implementation head passed wheel/package checks, brows
 
 For seed `20260911`, the long-run gate produced 1,058 submissions, 1,000 accepted turns, 58 deterministic rejections, **2,272 events**, 1,058 persisted turns, 1,000 episodes, and final canonical clock minute 4,361. Replay equality, state validity, monotonic clock/player knowledge/event log, item ownership, and event-id uniqueness all remained true with `failures=[]`. The two-event increase over M17 is explained by real replayable off-screen Dax map observations. These figures are correctness evidence, not performance measurements.
 
-## Promotion gate for Milestone 19
+## Milestone 19 invariant
 
-`investigate_item` still becomes actionable only when its target is already visible at the NPC's current location or in that NPC's inventory. The planner has no canonical observer-specific memory of where an item was previously seen. Reading `WorldState.items[target].location_id` directly would create omniscient pursuit and violate the epistemic boundary established for map navigation.
-
-The next coherent slice should make item-location observation replayable before adding pursuit:
+NPC item pursuit is driven by observer-specific memory rather than authoritative remote item truth:
 
 ```text
-locally visible / owned item
-→ typed NPC item-observation event
-→ observer-specific canonical item-location belief
-→ NPCPlanningContext receives only that NPC's belief
-→ investigate_item routes through known topology toward remembered location
-→ local arrival observation confirms, updates, or invalidates stale belief
-→ ordinary local inspection when accessible
+accepted NPC action at a physical location
+→ local NPCItemLocationObserved when configured target is seen/missing
+→ NPCKnowledge.item_location_beliefs for that NPC only
+→ NPCPlanningContext.known_item_locations
+→ bounded deterministic route over known topology toward remembered location
+→ local inspection/search
+→ positive confirmation, ordinary inspection, or negative stale-belief correction
+→ persistence / replay
 ```
 
-A belief must originate only from local visibility or ownership, never from global item truth. If another actor later moves the item, the NPC's remote belief must remain stale until local evidence corrects it; the engine must not silently synchronize private knowledge from canonical item state. Pursuit may use only locations/routes the NPC already knows. Forged remote item observations and cross-NPC knowledge transfer must be rejected, stale-belief correction must be replayable, and persistence/restart/replay plus the existing 1,000-turn continuity gate must remain green.
+`NPCPlanningContext` never receives authoritative remote `Item.location_id`. A belief is allowed to become stale when another actor moves an item elsewhere, and the engine deliberately does not synchronize that private memory from global state. The planner may chase the stale location only through map topology already known to that NPC. Reaching the remembered location does not complete the investigation; an accessible item must still pass the ordinary inspection path, while an absent item produces an accepted local search and a replayable negative observation that clears only the matching stale belief.
+
+`NPCItemLocationObserved` requires an existing, alive, conscious NPC physically present at the observation location. Positive observation requires the ground item to actually be present; negative observation requires a matching remembered location and an item that is no longer there. State validation checks item/location references and reconstructs every belief change from transition-event provenance, so direct dictionary mutation and forged remote observation are rejected. Observation affects only the acting NPC and does not transfer knowledge to the player or another NPC.
+
+The first fully green M19 implementation head `7c5db0c819f01ef2fef1be6e47b7984e8a8a3706` passed wheel/package checks, browser-asset verification, Ruff, strict mypy across 45 source files, **127 pytest tests**, and the seeded 1,000-accepted-turn evaluation plus JSON verifier. Focused coverage proves scoped planning context, remote observation rejection, positive/negative observation, provenance enforcement, cross-NPC isolation, stale-belief pursuit and correction, forged pursuit rejection, successful local inspection, SQLite restart, and replay equality.
+
+For seed `20260911`, the long-run gate produced 1,058 submissions, 1,000 accepted turns, 58 deterministic rejections, 2,272 events, 1,058 persisted turns, 1,000 episodes, and final canonical clock minute 4,361. Replay equality, state validity, monotonic clock/player knowledge/event log, item ownership, and event-id uniqueness all remained true with `failures=[]`. The default long-run scenario does not exercise additional item-memory events, so the event count remains the M18 baseline; M19 behavior is covered by dedicated integration regressions. These figures are correctness evidence, not performance measurements.
+
+## Promotion gate for Milestone 20
+
+NPC facts, maps, and item-location beliefs are still private unless independently learned. The existing `NPCLearnedFact` event can add a fact to one NPC, but it carries no source identity and currently does not represent a validated social transfer. The next coherent slice should make deliberate NPC-to-NPC fact communication replayable without bulk-copying private memory:
+
+```text
+source NPC known fact + physical co-location with receiver
+→ bounded deterministic share decision / explicit sharing operation
+→ typed source→receiver fact-sharing event
+→ validator proves source knows fact and both NPCs can interact locally
+→ reducer expands receiver facts only
+→ ordinary inference / persistence / replay
+```
+
+A transfer must reject missing/dead/unconscious/remote participants, an unknown source fact, and a receiver that already knows the fact. It must not copy map topology, item-location beliefs, relationships, or the source's entire fact set. Player knowledge remains separate unless an explicit player-facing interaction independently reveals the fact. Persistence/restart/replay and the existing 1,000-turn continuity gate must remain green.
