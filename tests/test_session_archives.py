@@ -133,7 +133,8 @@ def test_tampered_digest_is_rejected_before_target_database_creation(tmp_path: P
         ["import-session", str(archive_path), "--db", str(target_db)],
     )
     assert result.exit_code != 0
-    assert "digest does not match replay" in result.output
+    assert "current-state digest" in result.output
+    assert "replay" in result.output
     assert not target_db.exists()
 
 
@@ -189,7 +190,8 @@ def test_duplicate_import_rolls_back_without_partial_session(tmp_path: Path) -> 
         ["import-session", str(archive_path), "--db", str(target_db)],
     )
     assert duplicate.exit_code != 0
-    assert "conflicts with existing event or episode provenance" in duplicate.output
+    assert "conflicts with existing event" in duplicate.output
+    assert "provenance" in duplicate.output
     assert SQLiteStore(target_db).latest_session_id() == first_import_id
 
 
