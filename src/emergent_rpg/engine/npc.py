@@ -113,6 +113,7 @@ class DeterministicNPCPlanner:
                 goal
                 for goal in context.goals
                 if goal.id not in context.completed_goal_ids
+                and goal.required_fact_ids <= context.known_fact_ids
             ),
             key=lambda goal: (-goal.priority, goal.id),
         )
@@ -198,6 +199,12 @@ class DeterministicNPCResolver:
                 return NPCActionResult(accepted=False, reason="NPC goal does not exist.")
             if goal.id in entity.completed_goal_ids:
                 return NPCActionResult(accepted=False, reason="NPC goal is already complete.")
+            missing_required_facts = goal.required_fact_ids - entity.knowledge.facts_known
+            if missing_required_facts:
+                return NPCActionResult(
+                    accepted=False,
+                    reason="NPC goal prerequisites are not known.",
+                )
 
             if isinstance(intent, NPCMoveIntent):
                 result = self._resolve_move(state, entity, goal, intent, turn_number)
@@ -314,7 +321,11 @@ class DeterministicNPCResolver:
         seen_item_ids: set[str] = set()
         goals = sorted(npc.planning_goals, key=lambda goal: goal.id)
         for goal in goals:
-            if goal.id in npc.completed_goal_ids or goal.kind != "investigate_item":
+            if (
+                goal.id in npc.completed_goal_ids
+                or goal.kind != "investigate_item"
+                or not goal.required_fact_ids <= npc.knowledge.facts_known
+            ):
                 continue
             item_id = goal.target_id
             if item_id in seen_item_ids:
