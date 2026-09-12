@@ -18,8 +18,8 @@ from emergent_rpg.memory.models import Episode
 from emergent_rpg.persistence.db import (
     EpisodeRow,
     EventRow,
-    SQLiteStore,
     SessionRow,
+    SQLiteStore,
     TurnRow,
 )
 from emergent_rpg.validation.validator import validate_event_preconditions, validate_state
@@ -132,7 +132,9 @@ def build_session_archive(store: SQLiteStore, session_id: str) -> SessionArchive
         raise SessionArchiveError("source session current state does not match event replay")
     current_report = validate_state(current)
     if not current_report.valid:
-        raise SessionArchiveError(f"source session current state is invalid: {current_report.issues}")
+        raise SessionArchiveError(
+            f"source session current state is invalid: {current_report.issues}"
+        )
 
     archive = SessionArchive(
         source_session_id=session.id,
