@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from emergent_rpg.domain.events import (
     Event,
     FactDiscovered,
+    ItemAcquired,
     NPCFactShared,
     NPCGoalCompleted,
     NPCItemLocationObserved,
@@ -14,6 +15,7 @@ from emergent_rpg.domain.events import (
 )
 from emergent_rpg.domain.models import NPC, NPCGoal, WorldState
 from emergent_rpg.domain.npc_actions import (
+    NPCAcquireIntent,
     NPCCompleteGoalIntent,
     NPCInspectIntent,
     NPCIntent,
@@ -155,10 +157,17 @@ class DeterministicNPCPlanner:
                 return NPCMoveIntent(goal_id=goal.id, destination_id=next_hop)
             return None
 
-        if goal.kind == "investigate_item":
-            available = context.visible_item_ids | context.inventory_item_ids
-            if goal.target_id in available:
-                return NPCInspectIntent(goal_id=goal.id, item_id=goal.target_id)
+        if goal.kind in {"investigate_item", "acquire_item"}:
+            if goal.kind == "investigate_item":
+                available = context.visible_item_ids | context.inventory_item_ids
+                if goal.target_id in available:
+                    return NPCInspectIntent(goal_id=goal.id, item_id=goal.target_id)
+            else:
+                if goal.target_id in context.inventory_item_ids:
+                    return NPCCompleteGoalIntent(goal_id=goal.id)
+                if goal.target_id in context.visible_item_ids:
+                    return NPCAcquireIntent(goal_id=goal.id, item_id=goal.target_id)
+
             remembered_location = context.known_item_locations.get(goal.target_id)
             if remembered_location is None:
                 return None
@@ -208,10 +217,12 @@ class DeterministicNPCResolver:
 
             if isinstance(intent, NPCMoveIntent):
                 result = self._resolve_move(state, entity, goal, intent, turn_number)
+            elif isinstance(intent, NPCAcquireIntent):
+                result = self._resolve_acquire(state, entity, goal, intent, turn_number)
             elif isinstance(intent, NPCInspectIntent):
                 result = self._resolve_inspect(state, entity, goal, intent, turn_number)
             elif isinstance(intent, NPCCompleteGoalIntent):
-                result = self._resolve_completion(entity, goal, turn_number)
+                result = self._resolve_completion(state, entity, goal, turn_number)
             else:
                 return NPCActionResult(accepted=False, reason="Unsupported NPC intent.")
 
@@ -323,7 +334,7 @@ class DeterministicNPCResolver:
         for goal in goals:
             if (
                 goal.id in npc.completed_goal_ids
-                or goal.kind != "investigate_item"
+                or goal.kind not in {"investigate_item", "acquire_item"}
                 or not goal.required_fact_ids <= npc.knowledge.facts_known
             ):
                 continue
@@ -382,23 +393,23 @@ class DeterministicNPCResolver:
 
         if goal.kind == "reach_location":
             target_location = goal.target_id
-        elif goal.kind == "investigate_item":
+        elif goal.kind in {"investigate_item", "acquire_item"}:
             item = state.items.get(goal.target_id)
             if item is None:
                 return NPCActionResult(
                     accepted=False,
-                    reason="Investigation target does not exist.",
+                    reason="Item goal target does not exist.",
                 )
             if item.owner_id == npc.id or item.location_id == location.id:
                 return NPCActionResult(
                     accepted=False,
-                    reason="Investigation target is already accessible here.",
+                    reason="Item goal target is already accessible here.",
                 )
             remembered_location = npc.knowledge.item_location_beliefs.get(goal.target_id)
             if remembered_location is None:
                 return NPCActionResult(
                     accepted=False,
-                    reason="NPC does not know where the investigation target is.",
+                    reason="NPC does not know where the item goal target is.",
                 )
             target_location = remembered_location
         else:
@@ -439,6 +450,66 @@ class DeterministicNPCResolver:
         return NPCActionResult(accepted=True, emitted_events=events, tags={"npc_movement"})
 
     @classmethod
+    def _resolve_acquire(
+        cls,
+        state: WorldState,
+        npc: NPC,
+        goal: NPCGoal,
+        intent: NPCAcquireIntent,
+        turn_number: int,
+    ) -> NPCActionResult:
+        if goal.kind != "acquire_item" or goal.target_id != intent.item_id:
+            return NPCActionResult(
+                accepted=False,
+                reason="Acquisition does not satisfy the NPC goal.",
+            )
+        item = state.items.get(intent.item_id)
+        if item is None:
+            return NPCActionResult(accepted=False, reason="Acquisition target does not exist.")
+        if item.owner_id == npc.id:
+            return NPCActionResult(accepted=False, reason="NPC already owns the acquisition target.")
+        if item.owner_id is not None:
+            return NPCActionResult(accepted=False, reason="Acquisition target is owned by someone else.")
+        if item.location_id != npc.state.current_location:
+            return NPCActionResult(accepted=False, reason="Acquisition target is not here.")
+        if "portable" not in item.flags:
+            return NPCActionResult(accepted=False, reason="Acquisition target is not portable.")
+
+        location_id = npc.state.current_location
+        events = cls._map_if_new(npc, location_id, turn_number)
+        events.append(
+            ItemAcquired(
+                turn_number=turn_number,
+                item_id=item.id,
+                actor_id=npc.id,
+                from_location=location_id,
+            )
+        )
+        events.append(
+            NPCItemLocationObserved(
+                turn_number=turn_number,
+                npc_id=npc.id,
+                item_id=item.id,
+                location_id=location_id,
+                present=False,
+            )
+        )
+        events.append(
+            NPCGoalCompleted(
+                turn_number=turn_number,
+                npc_id=npc.id,
+                goal_id=goal.id,
+                method="acquired_item",
+                evidence_id=item.id,
+            )
+        )
+        return NPCActionResult(
+            accepted=True,
+            emitted_events=events,
+            tags={"npc_item", "npc_acquisition"},
+        )
+
+    @classmethod
     def _resolve_inspect(
         cls,
         state: WorldState,
@@ -447,7 +518,10 @@ class DeterministicNPCResolver:
         intent: NPCInspectIntent,
         turn_number: int,
     ) -> NPCActionResult:
-        if goal.kind != "investigate_item" or goal.target_id != intent.item_id:
+        if goal.target_id != intent.item_id or goal.kind not in {
+            "investigate_item",
+            "acquire_item",
+        }:
             return NPCActionResult(
                 accepted=False,
                 reason="Inspection does not satisfy the NPC goal.",
@@ -455,6 +529,27 @@ class DeterministicNPCResolver:
         item = state.items.get(intent.item_id)
         if item is None:
             return NPCActionResult(accepted=False, reason="Inspection target does not exist.")
+
+        if goal.kind == "acquire_item":
+            if item.owner_id == npc.id:
+                return NPCActionResult(
+                    accepted=False,
+                    reason="NPC already owns the acquisition target.",
+                )
+            if item.location_id == npc.state.current_location:
+                return NPCActionResult(
+                    accepted=False,
+                    reason="Acquisition target is visible and should be acquired.",
+                )
+            remembered_location = npc.knowledge.item_location_beliefs.get(item.id)
+            if remembered_location == npc.state.current_location:
+                return NPCActionResult(
+                    accepted=True,
+                    reason="Item is no longer at the remembered location.",
+                    tags={"npc_search"},
+                )
+            return NPCActionResult(accepted=False, reason="Acquisition target is not accessible.")
+
         available = item.owner_id == npc.id or item.location_id == npc.state.current_location
         if not available:
             remembered_location = npc.knowledge.item_location_beliefs.get(item.id)
@@ -493,20 +588,31 @@ class DeterministicNPCResolver:
     @classmethod
     def _resolve_completion(
         cls,
+        state: WorldState,
         npc: NPC,
         goal: NPCGoal,
         turn_number: int,
     ) -> NPCActionResult:
-        if goal.kind != "reach_location" or npc.state.current_location != goal.target_id:
+        if goal.kind == "reach_location" and npc.state.current_location == goal.target_id:
+            method = "reached_location"
+            evidence_id = goal.target_id
+        elif goal.kind == "acquire_item":
+            item = state.items.get(goal.target_id)
+            if item is None or item.owner_id != npc.id or goal.target_id not in npc.state.inventory:
+                return NPCActionResult(accepted=False, reason="NPC goal is not satisfied yet.")
+            method = "acquired_item"
+            evidence_id = item.id
+        else:
             return NPCActionResult(accepted=False, reason="NPC goal is not satisfied yet.")
+
         events = cls._map_if_new(npc, npc.state.current_location, turn_number)
         events.append(
             NPCGoalCompleted(
                 turn_number=turn_number,
                 npc_id=npc.id,
                 goal_id=goal.id,
-                method="reached_location",
-                evidence_id=goal.target_id,
+                method=method,
+                evidence_id=evidence_id,
             )
         )
         return NPCActionResult(accepted=True, emitted_events=events, tags={"npc_goal"})
