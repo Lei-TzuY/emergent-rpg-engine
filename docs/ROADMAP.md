@@ -18,7 +18,8 @@ The project advances by coherent executable slices rather than placeholder subsy
 14. **Environmental rules / traversal hazards** — declarative active-condition traversal effects, deterministic additive movement cost, ordinary event emission, player-visible explanation, and long-run replay evidence. **Complete.**
 15. **Environmental condition lifecycle / expiry** — canonical lifespans, typed validated expiry events, explicit replayable expiry queues, bounded lifecycle processing, provenance-aware removal, and restoration of baseline rules. **Complete.**
 16. **Environmental route access / closures** — data-driven blocked exits, deterministic player/NPC enforcement, parser/API/CLI/UI projection, validator backstop, and automatic route restoration after expiry. **Complete.**
-17. **Knowledge-scoped NPC multi-hop navigation / rerouting** — explicit NPC route knowledge, bounded deterministic path selection over known topology, dynamic closure-aware replanning, and resolver-validated step execution without global-world omniscience. **Next.**
+17. **Knowledge-scoped NPC multi-hop navigation / rerouting** — explicit NPC route knowledge, bounded deterministic path selection over known topology, dynamic closure-aware replanning, resolver-validated step execution, persistence, and replay without global-world omniscience. **Complete.**
+18. **Replayable NPC map learning / route discovery** — typed observation-driven expansion of NPC map knowledge, physical-presence validation, reducer-owned knowledge updates, and persistence/replay without cross-observer leakage. **Next.**
 
 ## Milestone 3 invariant
 
@@ -263,10 +264,35 @@ The demo Ashfall squall temporarily blocks Yard → Glass Ridge from 08:20 until
 
 The first fully green M16 implementation head passed 104 pytest tests plus the seeded 1,000-accepted-turn evaluation. That run produced 1,058 submissions, 1,000 accepted turns, 58 deterministic rejections, 2,270 events, 1,000 episodes, and final canonical clock minute 4,361. Replay equality, state validity, monotonic clock/knowledge/event log, item ownership, and event-id uniqueness all remained true with `failures=[]`. These figures are correctness evidence, not performance measurements.
 
-## Promotion gate for Milestone 17
+## Milestone 17 invariant
 
-NPC `reach_location` goals currently only yield a move intent when the goal target is a directly adjacent accessible exit. Multi-hop navigation must not be implemented by handing the planner the entire `WorldState`, because the existing NPC architecture deliberately scopes planning to what an NPC can know.
+NPC navigation is deterministic over epistemically scoped map knowledge, not the full world graph:
 
-The next vertical slice should introduce explicit canonical NPC navigation knowledge (known locations/routes or an equivalent bounded map representation), project only that knowledge into `NPCPlanningContext`, and choose the next hop with a deterministic bounded path algorithm and stable tie-breaking. Active route closures must cause safe replanning when they affect a known next hop, while unknown remote hazards must not become omniscient planner input. Every chosen step must still pass the existing NPC resolver and movement-event validator.
+```text
+NPC.knowledge.mapped_locations
+→ static topology for mapped locations only
++ currently observable local exits
+→ local exits filtered by EnvironmentalRules
+→ bounded NPCPlanningContext.known_routes
+→ deterministic <=8-hop BFS with lexical tie-breaking
+→ one local NPCMoveIntent
+→ resolver recomputes and validates the same next hop
+→ ordinary NPCMoved / final NPCGoalCompleted
+→ persistence / replay
+```
 
-Tests should cover multi-hop goal completion over several simulation cycles, deterministic equal-length path choice, rerouting around a currently known closure, no route through unknown/unmapped topology, forged intent rejection, replay/restart equality, off-screen simulation behavior, and the existing 1,000-turn continuity gate.
+The current location is always directly observable, so its adjacency reflects active local closures. Remote mapped locations expose only their static known topology; remote current hazards are deliberately absent until the NPC reaches that location. The planner therefore can re-route when a closure becomes locally observable without receiving omniscient live-world data.
+
+Multi-hop travel remains phase-by-phase. Intermediate steps emit `NPCMoved` only, while `NPCGoalCompleted(method="reached_location")` is emitted only when the accepted step reaches the final target. The resolver independently checks liveness, local adjacency, environmental route access, and recomputes the deterministic next hop, so a forged accessible detour that does not match the NPC's own known route is rejected.
+
+The first fully green M17 implementation head passed wheel/package checks, Ruff, strict mypy across 45 source files, **110 pytest tests**, and the seeded 1,000-accepted-turn evaluation plus JSON verifier. The focused suite proves stable equal-length tie-breaking, an eight-hop bound, refusal to route through unmapped global topology, local rerouting after remote closure discovery, final-hop-only goal completion, and a three-phase SQLite persistence/replay path from Bunkhouse through Yard and Operations to Archive.
+
+For seed `20260911`, the long-run gate produced 1,058 submissions, 1,000 accepted turns, 58 deterministic rejections, 2,270 events, 1,058 persisted turns, 1,000 episodes, and final canonical clock minute 4,361. Replay equality, state validity, monotonic clock/knowledge/event log, item ownership, and event-id uniqueness all remained true with `failures=[]`. These figures are correctness evidence, not performance measurements.
+
+## Promotion gate for Milestone 18
+
+`mapped_locations` is canonical, but merely standing in or traversing a location does not yet create replayable map knowledge. The current planner can observe local exits transiently, so an NPC may use the topology while present and then lose that information after leaving unless the location was configured as already mapped.
+
+The next coherent slice should make route discovery itself a typed canonical transition. A mapping/observation event must identify the NPC and observed location, validate that the NPC is alive, conscious, and physically present there, and update only that NPC's `mapped_locations` through the reducer. Normal autonomous execution should emit this event when an NPC first observes a previously unmapped current or arrival location; direct set mutation outside replay/reduction must not become a second authority path.
+
+Tests must cover initial-location observation, learning after movement, idempotence for already-mapped locations, forged remote-map rejection, no cross-NPC or player-knowledge leakage, persistence/restart/replay equality, off-screen simulation integration, and the existing 1,000-turn continuity gate.

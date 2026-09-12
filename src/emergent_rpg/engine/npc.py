@@ -19,6 +19,7 @@ from emergent_rpg.domain.npc_actions import (
 )
 from emergent_rpg.engine.environment import EnvironmentalRules
 from emergent_rpg.engine.mystery import MysteryGraph
+from emergent_rpg.engine.navigation import deterministic_next_hop
 
 
 class NPCActionResult(BaseModel):
@@ -50,11 +51,21 @@ def build_npc_planning_context(state: WorldState, npc_id: str) -> NPCPlanningCon
     location = state.locations[entity.state.current_location]
     known_ids = set(entity.knowledge.facts_known)
     accessible_exits = EnvironmentalRules().accessible_exits(state, location.id)
+    known_routes = {
+        mapped_location_id: set(state.locations[mapped_location_id].exits.values())
+        for mapped_location_id in sorted(entity.knowledge.mapped_locations)
+        if mapped_location_id in state.locations
+    }
+    # The NPC can directly observe the exits at its current location. Active
+    # closures replace that local adjacency, while remote mapped locations keep
+    # only the static topology the NPC already knows.
+    known_routes[location.id] = set(accessible_exits.values())
     return NPCPlanningContext(
         npc_id=entity.id,
         npc_name=entity.name,
         current_location_id=location.id,
         exits=accessible_exits,
+        known_routes=known_routes,
         visible_item_ids={
             item.id for item in state.items.values() if item.location_id == location.id
         },
@@ -114,8 +125,13 @@ class DeterministicNPCPlanner:
         if goal.kind == "reach_location":
             if context.current_location_id == goal.target_id:
                 return NPCCompleteGoalIntent(goal_id=goal.id)
-            if goal.target_id in context.exits.values():
-                return NPCMoveIntent(goal_id=goal.id, destination_id=goal.target_id)
+            next_hop = deterministic_next_hop(
+                context.current_location_id,
+                goal.target_id,
+                context.known_routes,
+            )
+            if next_hop is not None:
+                return NPCMoveIntent(goal_id=goal.id, destination_id=next_hop)
             return None
 
         if goal.kind == "investigate_item":
@@ -165,7 +181,7 @@ class DeterministicNPCResolver:
         intent: NPCMoveIntent,
         turn_number: int,
     ) -> NPCActionResult:
-        if goal.kind != "reach_location" or goal.target_id != intent.destination_id:
+        if goal.kind != "reach_location":
             return NPCActionResult(accepted=False, reason="Move does not satisfy the NPC goal.")
         if any(condition.incapacitating for condition in npc.state.status_conditions):
             return NPCActionResult(accepted=False, reason="NPC movement is blocked.")
@@ -179,21 +195,37 @@ class DeterministicNPCResolver:
                 accepted=False,
                 reason=f"NPC route is blocked by: {blockers}.",
             )
+
+        context = build_npc_planning_context(state, npc.id)
+        expected_next_hop = deterministic_next_hop(
+            context.current_location_id,
+            goal.target_id,
+            context.known_routes,
+        )
+        if expected_next_hop != intent.destination_id:
+            return NPCActionResult(
+                accepted=False,
+                reason="Move does not match the NPC's deterministic known route.",
+            )
+
         events: list[Event] = [
             NPCMoved(
                 turn_number=turn_number,
                 npc_id=npc.id,
                 from_location=location.id,
                 to_location=intent.destination_id,
-            ),
-            NPCGoalCompleted(
-                turn_number=turn_number,
-                npc_id=npc.id,
-                goal_id=goal.id,
-                method="reached_location",
-                evidence_id=intent.destination_id,
-            ),
+            )
         ]
+        if intent.destination_id == goal.target_id:
+            events.append(
+                NPCGoalCompleted(
+                    turn_number=turn_number,
+                    npc_id=npc.id,
+                    goal_id=goal.id,
+                    method="reached_location",
+                    evidence_id=intent.destination_id,
+                )
+            )
         return NPCActionResult(accepted=True, emitted_events=events, tags={"npc_movement"})
 
     @staticmethod
