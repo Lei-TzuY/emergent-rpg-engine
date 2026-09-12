@@ -435,7 +435,10 @@ class DeterministicNPCResolver:
             if item.owner_id != npc.id or goal.target_id not in npc.state.inventory:
                 return NPCActionResult(accepted=False, reason="NPC does not own the delivery item.")
             if goal.delivery_location_id is None:
-                return NPCActionResult(accepted=False, reason="Delivery location is not configured.")
+                return NPCActionResult(
+                    accepted=False,
+                    reason="Delivery location is not configured.",
+                )
             target_location = goal.delivery_location_id
         elif goal.kind in {"investigate_item", "acquire_item"}:
             if goal.kind == "investigate_item":
