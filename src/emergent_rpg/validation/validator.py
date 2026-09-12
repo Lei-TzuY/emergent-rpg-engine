@@ -22,6 +22,7 @@ from emergent_rpg.domain.events import (
 )
 from emergent_rpg.domain.models import NPC, LocationCondition, PlayerCharacter, WorldState
 from emergent_rpg.engine.environment import EnvironmentalRules
+from emergent_rpg.engine.social import SocialDisclosurePolicy
 from emergent_rpg.validation.models import ValidationReport
 
 
@@ -681,7 +682,8 @@ def _validate_npc_fact_shared(
             f"invalid fact-sharing receiver {event.receiver_npc_id}",
         )
         return
-    if event.fact_id not in state.facts:
+    fact = state.facts.get(event.fact_id)
+    if fact is None:
         report.add_error("invalid_npc_fact_share", f"missing shared fact {event.fact_id}")
         return
     if not source.state.alive or not source.state.conscious:
@@ -702,6 +704,17 @@ def _validate_npc_fact_shared(
         report.add_error(
             "invalid_npc_fact_share",
             f"{receiver.id} already knows fact {event.fact_id}",
+        )
+    if (
+        event.fact_id in source.knowledge.facts_known
+        and event.fact_id not in receiver.knowledge.facts_known
+        and not SocialDisclosurePolicy.can_disclose(fact, source, receiver.id)
+    ):
+        score = SocialDisclosurePolicy.relationship_score(source, receiver.id)
+        report.add_error(
+            "npc_disclosure_blocked",
+            f"{source.id} relationship {score} with {receiver.id} is below "
+            f"fact {event.fact_id} disclosure requirement {fact.disclosure_min_relationship}",
         )
 
 
