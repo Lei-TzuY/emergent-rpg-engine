@@ -4,33 +4,38 @@ This file is the compact current-phase status. Historical milestone invariants a
 
 ## Current checkpoint
 
-- Milestones 1–23: **Complete**.
-- Milestone 24 — **Data-driven dialogue relationship progression**: **Complete candidate** on PR #25, pending final exact-head CI / merge gate.
-- Milestone 25 — **Replayable NPC social relationship progression**: **Next** after Milestone 24 is merged and merged-main CI is green.
+- Milestones 1–24: **Complete** on merged `main`.
+- Milestone 25 — **Replayable NPC social relationship progression**: **Complete candidate** on PR #26; executable head `0db148349b69cbfc348b84d30ee2ce80c0409e0a` passed the full verification gate.
+- Milestone 26 — **Knowledge-gated reactive NPC goals**: **Next** after Milestone 25 final docs-head CI, merge gate, and merged-main CI are green.
 
-## Milestone 24 authority boundary
+## Milestone 25 authority boundary
 
-Dialogue-triggered relationship progression is now canonical world data:
+NPC social relationship progression reuses the existing canonical dialogue relationship-rule engine:
 
 ```text
-DialogueRelationshipRule world data
-+ canonical listener knowledge
-→ deterministic priority/id rule selection
-→ ordinary RelationshipChanged(rule_id=...)
-→ reducer-side provenance validation
-→ bounded relationship mutation
-→ canonical one-shot applied-rule marker
-→ SQLite persistence / replay
+accepted NPC social action
+→ NPCFactShared(source, receiver, fact)
+→ receiver canonical knowledge update
+→ DialogueRelationshipPolicy over source → receiver
+→ optional RelationshipChanged(rule_id=...)
+→ reducer-side rule provenance validation
+→ one-shot applied-rule state
+→ optional receiver inference
+→ persistence / replay
 ```
 
-The generic resolver contains no Ashfall-specific NPC/fact branch for relationship progression. World-specific identifiers and observation prose are configured by the world pack. `RelationshipChanged(rule_id=None)` remains compatible for unrelated/manual relationship transitions.
+`NPCFactShared` is reduced before a relationship consequence, so a fact learned in the same social action can legitimately satisfy the rule while reducer validation still recomputes eligibility from canonical state. `RelationshipChanged` remains the only relationship mutation event; M25 adds no second social trust store or mutation authority. The relationship consequence stays inside the accepted share and does not consume another social-action slot.
 
-The first complete executable M24 candidate `9f96bbf7150bf8284f4c35fb8f99d597ff769b70` passed wheel/package verification, Ruff, strict mypy across 47 source files, 156 pytest tests, the seeded 1,000-accepted-turn consistency evaluation, and JSON report verification. The long-run report preserved 1,058 submissions / 1,000 accepted / 58 rejected / 2,274 events / final clock 4,361 with every tracked invariant true and `failures=[]`.
+Explicit `npc-social-step` and automatic off-screen diffusion use the same resolver, so the same event ordering, directed source→receiver semantics, one-shot anti-farming, bounded delta, persistence, and replay rules apply to both surfaces.
 
-See `docs/DIALOGUE_RELATIONSHIP_RULES.md` for the full invariant and focused verification surface.
+The first complete M25 implementation head `0db148349b69cbfc348b84d30ee2ce80c0409e0a` passed wheel/package verification, Ruff, strict mypy across **47 source files**, **159 pytest tests**, the seeded 1,000-accepted-turn evaluation, and JSON report verification. The long-run report preserved 1,058 submissions / 1,000 accepted / 58 rejected / 2,274 events / final clock 4,361 with every tracked invariant true and `failures=[]`.
 
-## Next frontier: Milestone 25
+See `docs/NPC_SOCIAL_RELATIONSHIP_RULES.md` for focused authority and verification details.
 
-The same canonical dialogue relationship rule model already supports NPC listeners, but NPC-to-NPC `NPCFactShared` execution does not yet evaluate relationship consequences. Milestone 25 should integrate the existing rule engine after a successful share, in the same explicit/off-screen social transaction, without adding another relationship authority or consuming an additional social action slot.
+## Next frontier: Milestone 26
 
-Acceptance requires the newly shared fact to become canonical receiver knowledge before rule validation, directed source→receiver semantics, one-shot anti-farming, reducer provenance validation, parity between explicit `npc-social-step` and automatic off-screen social diffusion, SQLite replay, and the existing 1,000-turn continuity gate.
+NPCs can now acquire facts through local discovery, inference, explicit sharing, and automatic off-screen diffusion, but every configured `NPCGoal` is still statically eligible. Milestone 26 should make goal eligibility react to the acting NPC's own canonical knowledge without introducing a planner-side mutation path.
+
+The first coherent slice is a backwards-compatible `NPCGoal.required_fact_ids` prerequisite set. Goals with no prerequisites preserve current behavior. A gated goal remains dormant until all prerequisites are in that NPC's `facts_known`; objective world truth or another observer's knowledge must not activate it. Once the final prerequisite is learned through an ordinary canonical event, the next explicit or off-screen goal phase should deterministically consider the goal under the existing priority/path/resolver pipeline.
+
+Acceptance requires cross-observer isolation, deterministic priority interaction with existing goals, social-learning activation, explicit/off-screen execution parity, persistence/replay, and the existing 1,000-turn continuity gate.
