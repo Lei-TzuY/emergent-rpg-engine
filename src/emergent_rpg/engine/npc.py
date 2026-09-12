@@ -6,6 +6,7 @@ from emergent_rpg.domain.events import (
     Event,
     FactDiscovered,
     NPCGoalCompleted,
+    NPCLocationMapped,
     NPCMoved,
 )
 from emergent_rpg.domain.models import NPC, NPCGoal, WorldState
@@ -174,7 +175,20 @@ class DeterministicNPCResolver:
         return next((goal for goal in npc.planning_goals if goal.id == goal_id), None)
 
     @staticmethod
+    def _map_if_new(npc: NPC, location_id: str, turn_number: int) -> list[Event]:
+        if location_id in npc.knowledge.mapped_locations:
+            return []
+        return [
+            NPCLocationMapped(
+                turn_number=turn_number,
+                npc_id=npc.id,
+                location_id=location_id,
+            )
+        ]
+
+    @classmethod
     def _resolve_move(
+        cls,
         state: WorldState,
         npc: NPC,
         goal: NPCGoal,
@@ -208,14 +222,16 @@ class DeterministicNPCResolver:
                 reason="Move does not match the NPC's deterministic known route.",
             )
 
-        events: list[Event] = [
+        events = cls._map_if_new(npc, location.id, turn_number)
+        events.append(
             NPCMoved(
                 turn_number=turn_number,
                 npc_id=npc.id,
                 from_location=location.id,
                 to_location=intent.destination_id,
             )
-        ]
+        )
+        events.extend(cls._map_if_new(npc, intent.destination_id, turn_number))
         if intent.destination_id == goal.target_id:
             events.append(
                 NPCGoalCompleted(
@@ -228,8 +244,9 @@ class DeterministicNPCResolver:
             )
         return NPCActionResult(accepted=True, emitted_events=events, tags={"npc_movement"})
 
-    @staticmethod
+    @classmethod
     def _resolve_inspect(
+        cls,
         state: WorldState,
         npc: NPC,
         goal: NPCGoal,
@@ -248,7 +265,7 @@ class DeterministicNPCResolver:
         if not available:
             return NPCActionResult(accepted=False, reason="Inspection target is not accessible.")
 
-        events: list[Event] = []
+        events = cls._map_if_new(npc, npc.state.current_location, turn_number)
         if (
             item.reveals_fact_id
             and item.reveals_fact_id not in npc.knowledge.facts_known
@@ -272,19 +289,23 @@ class DeterministicNPCResolver:
         )
         return NPCActionResult(accepted=True, emitted_events=events, tags={"npc_inspection"})
 
-    @staticmethod
+    @classmethod
     def _resolve_completion(
+        cls,
         npc: NPC,
         goal: NPCGoal,
         turn_number: int,
     ) -> NPCActionResult:
         if goal.kind != "reach_location" or npc.state.current_location != goal.target_id:
             return NPCActionResult(accepted=False, reason="NPC goal is not satisfied yet.")
-        event = NPCGoalCompleted(
-            turn_number=turn_number,
-            npc_id=npc.id,
-            goal_id=goal.id,
-            method="reached_location",
-            evidence_id=goal.target_id,
+        events = cls._map_if_new(npc, npc.state.current_location, turn_number)
+        events.append(
+            NPCGoalCompleted(
+                turn_number=turn_number,
+                npc_id=npc.id,
+                goal_id=goal.id,
+                method="reached_location",
+                evidence_id=goal.target_id,
+            )
         )
-        return NPCActionResult(accepted=True, emitted_events=[event], tags={"npc_goal"})
+        return NPCActionResult(accepted=True, emitted_events=events, tags={"npc_goal"})
