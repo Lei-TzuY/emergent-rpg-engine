@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from emergent_rpg.domain.events import (
@@ -599,6 +601,7 @@ class DeterministicNPCResolver:
         goal: NPCGoal,
         turn_number: int,
     ) -> NPCActionResult:
+        method: Literal["reached_location", "acquired_item"]
         if goal.kind == "reach_location" and npc.state.current_location == goal.target_id:
             method = "reached_location"
             evidence_id = goal.target_id
