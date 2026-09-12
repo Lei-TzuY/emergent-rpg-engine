@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from sqlalchemy import Engine, MetaData, inspect, text
+from sqlalchemy import MetaData, inspect, text
+from sqlalchemy.engine import Engine
 from sqlalchemy.engine.reflection import Inspector
 
 CURRENT_SCHEMA_VERSION = 1
