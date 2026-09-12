@@ -7,7 +7,7 @@ from pydantic import ValidationError
 
 from emergent_rpg.domain.actions import WaitAction
 from emergent_rpg.domain.events import NPCFactShared, NPCGoalCompleted, NPCMoved
-from emergent_rpg.domain.models import GameSession, NPC, NPCGoal, WorldState
+from emergent_rpg.domain.models import NPC, GameSession, NPCGoal, WorldState
 from emergent_rpg.domain.npc_actions import NPCMoveIntent
 from emergent_rpg.engine.npc import (
     DeterministicNPCPlanner,
