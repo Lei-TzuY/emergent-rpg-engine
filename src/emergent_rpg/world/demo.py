@@ -202,6 +202,7 @@ def build_demo_world() -> WorldState:
             source="relay console diagnostic cache",
             related_entities={"npc_arden", "npc_lio"},
             tags={"inspect:operations:console", "clue", "sabotage"},
+            disclosure_min_relationship=20,
         ),
         "fact_key_mark": Fact(
             id="fact_key_mark",
