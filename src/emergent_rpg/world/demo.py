@@ -3,6 +3,7 @@ from __future__ import annotations
 from emergent_rpg.domain.models import (
     NPC,
     CharacterState,
+    DialogueRelationshipRule,
     Fact,
     FactInferenceRule,
     Item,
@@ -355,6 +356,18 @@ def build_demo_world() -> WorldState:
         items=items,
         facts=facts,
         inference_rules=inference_rules,
+        dialogue_relationship_rules=[
+            DialogueRelationshipRule(
+                id="arden_trusts_sabotage_evidence",
+                speaker_id="npc_arden",
+                listener_id="player",
+                required_listener_fact_ids={"fact_relay_sabotage"},
+                delta=5,
+                priority=100,
+                once=True,
+                observation="Arden's guarded posture eases; you have earned a little trust.",
+            )
+        ],
         scheduled_location_conditions=[
             ScheduledLocationCondition(
                 id="yard_ash_squall",

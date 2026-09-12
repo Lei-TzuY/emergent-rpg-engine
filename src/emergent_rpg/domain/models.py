@@ -115,6 +115,23 @@ class NPC(Entity):
 Character = Annotated[PlayerCharacter | NPC, Field(discriminator="kind")]
 
 
+class DialogueRelationshipRule(BaseModel):
+    id: str = Field(min_length=1)
+    speaker_id: EntityId
+    listener_id: EntityId
+    required_listener_fact_ids: set[FactId] = Field(default_factory=set)
+    delta: int = Field(ge=-100, le=100)
+    priority: int = Field(default=0, ge=-100, le=100)
+    once: bool = True
+    observation: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def nonzero_delta(self) -> DialogueRelationshipRule:
+        if self.delta == 0:
+            raise ValueError("dialogue relationship rule delta must be non-zero")
+        return self
+
+
 class TraversalEffect(BaseModel):
     extra_minutes: int = Field(default=0, ge=0, le=60)
 
@@ -219,6 +236,8 @@ class WorldState(BaseModel):
     items: dict[ItemId, Item]
     facts: dict[FactId, Fact]
     inference_rules: dict[str, FactInferenceRule] = Field(default_factory=dict)
+    dialogue_relationship_rules: list[DialogueRelationshipRule] = Field(default_factory=list)
+    applied_dialogue_relationship_rule_ids: set[str] = Field(default_factory=set)
     simulation: SimulationState = Field(default_factory=SimulationState)
     scheduled_location_conditions: list[ScheduledLocationCondition] = Field(default_factory=list)
     scheduled_location_condition_expirations: list[ScheduledLocationConditionExpiry] = Field(
@@ -226,6 +245,25 @@ class WorldState(BaseModel):
     )
     player_known_facts: set[FactId] = Field(default_factory=set)
     factions: set[str] = Field(default_factory=set)
+
+    @model_validator(mode="after")
+    def dialogue_relationship_rule_consistency(self) -> WorldState:
+        rule_ids = [rule.id for rule in self.dialogue_relationship_rules]
+        if len(rule_ids) != len(set(rule_ids)):
+            raise ValueError("dialogue relationship rule ids must be unique")
+        unknown_applied = self.applied_dialogue_relationship_rule_ids - set(rule_ids)
+        if unknown_applied:
+            raise ValueError("applied dialogue relationship rules must reference configured rules")
+        for rule in self.dialogue_relationship_rules:
+            speaker = self.entities.get(rule.speaker_id)
+            if not isinstance(speaker, NPC):
+                raise ValueError("dialogue relationship rule speaker must reference an NPC")
+            if rule.listener_id not in self.entities:
+                raise ValueError("dialogue relationship rule listener must reference an entity")
+            missing_facts = rule.required_listener_fact_ids - self.facts.keys()
+            if missing_facts:
+                raise ValueError("dialogue relationship rule references missing facts")
+        return self
 
     def player(self) -> PlayerCharacter:
         entity = self.entities[self.player_id]

@@ -28,6 +28,7 @@ from emergent_rpg.domain.models import (
     StatusCondition,
     WorldState,
 )
+from emergent_rpg.engine.dialogue import DialogueRelationshipPolicy
 
 
 class ReductionError(ValueError):
@@ -113,11 +114,22 @@ def apply_event(state: WorldState, event: Event) -> WorldState:
             raise ReductionError("NPCLearnedFact target is not an NPC")
         npc.knowledge.facts_known.add(event.fact_id)
     elif isinstance(event, RelationshipChanged):
+        rule_error = DialogueRelationshipPolicy.validate_rule_event(new_state, event)
+        if rule_error is not None:
+            raise ReductionError(rule_error)
         source = new_state.entities[event.source_id]
         if not isinstance(source, NPC):
             raise ReductionError("relationship source is not an NPC")
         current = source.relationships.get(event.target_id, 0)
         source.relationships[event.target_id] = max(-100, min(100, current + event.delta))
+        if event.rule_id is not None:
+            rule = next(
+                rule
+                for rule in new_state.dialogue_relationship_rules
+                if rule.id == event.rule_id
+            )
+            if rule.once:
+                new_state.applied_dialogue_relationship_rule_ids.add(rule.id)
     elif isinstance(event, TimeAdvanced):
         new_state.clock = new_state.clock.advanced(event.minutes)
     elif isinstance(event, SimulationCycleProcessed):
