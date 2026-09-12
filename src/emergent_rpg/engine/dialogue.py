@@ -20,8 +20,11 @@ class DialogueRelationshipPolicy:
         state: WorldState,
         speaker_id: str,
         listener_id: str,
+        *,
+        additional_listener_fact_ids: set[str] | None = None,
     ) -> list[DialogueRelationshipRule]:
-        listener_facts = cls._listener_known_facts(state, listener_id)
+        listener_facts = set(cls._listener_known_facts(state, listener_id))
+        listener_facts.update(additional_listener_fact_ids or set())
         eligible = [
             rule
             for rule in state.dialogue_relationship_rules
@@ -38,8 +41,15 @@ class DialogueRelationshipPolicy:
         state: WorldState,
         speaker_id: str,
         listener_id: str,
+        *,
+        additional_listener_fact_ids: set[str] | None = None,
     ) -> DialogueRelationshipRule | None:
-        eligible = cls.eligible_rules(state, speaker_id, listener_id)
+        eligible = cls.eligible_rules(
+            state,
+            speaker_id,
+            listener_id,
+            additional_listener_fact_ids=additional_listener_fact_ids,
+        )
         return eligible[0] if eligible else None
 
     @classmethod
