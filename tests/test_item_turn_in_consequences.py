@@ -13,9 +13,9 @@ from emergent_rpg.domain.events import (
     RelationshipChanged,
 )
 from emergent_rpg.domain.models import (
+    NPC,
     GameSession,
     ItemTurnInConsequenceRule,
-    NPC,
     NPCGoal,
     WorldState,
 )
