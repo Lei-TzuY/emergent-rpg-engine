@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from typer.testing import CliRunner
 
 from emergent_rpg.engine.service import GameEngine
-from emergent_rpg.persistence.db import SQLiteStore, SessionRow, TurnRow
+from emergent_rpg.persistence.db import SessionRow, SQLiteStore, TurnRow
 from emergent_rpg.persistence.verification import verify_session
 from emergent_rpg.verification_cli import app
 
