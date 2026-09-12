@@ -27,6 +27,7 @@ from emergent_rpg.engine.dialogue import DialogueRelationshipPolicy
 from emergent_rpg.engine.environment import EnvironmentalRules
 from emergent_rpg.engine.mystery import MysteryGraph
 from emergent_rpg.engine.social import SocialDisclosurePolicy
+from emergent_rpg.engine.turn_in import ItemTurnInConsequencePolicy
 
 
 class ActionResult(BaseModel):
@@ -169,13 +170,56 @@ class DeterministicResolver:
                 )
                 for goal in matching_goals
             )
+
+            observations = [f"You give {item.name} to {receiver.name}."]
+            tags = {"item", "handoff"}
+            completed_goal_ids = {goal.id for goal in matching_goals}
+            consequence_rule = ItemTurnInConsequencePolicy.next_rule(
+                state,
+                receiver.id,
+                item.id,
+                completed_goal_ids=completed_goal_ids,
+            )
+            if consequence_rule is not None:
+                if (
+                    consequence_rule.reward_fact_id is not None
+                    and consequence_rule.reward_fact_id not in state.player_known_facts
+                    and MysteryGraph.can_discover_fact(
+                        state,
+                        consequence_rule.reward_fact_id,
+                        player.id,
+                    )
+                ):
+                    events.append(
+                        FactDiscovered(
+                            turn_number=turn,
+                            fact_id=consequence_rule.reward_fact_id,
+                            observer_id=player.id,
+                        )
+                    )
+                    observations.append(
+                        state.facts[consequence_rule.reward_fact_id].proposition
+                    )
+                events.append(
+                    RelationshipChanged(
+                        turn_number=turn,
+                        source_id=receiver.id,
+                        target_id=player.id,
+                        delta=consequence_rule.relationship_delta,
+                        rule_id=consequence_rule.id,
+                    )
+                )
+                if consequence_rule.observation:
+                    observations.append(consequence_rule.observation)
+                tags.add("reward")
+
             events.append(TimeAdvanced(turn_number=turn, minutes=1))
             return ActionResult(
                 accepted=True,
                 emitted_events=events,
-                observations=[f"You give {item.name} to {receiver.name}."],
+                observations=observations,
                 involved_entities={player.id, receiver.id},
-                tags={"item", "handoff"},
+                tags=tags,
             )
 
         if isinstance(action, InspectAction):
