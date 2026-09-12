@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import Session
 from typer.testing import CliRunner
 
@@ -85,14 +85,11 @@ def test_audit_accepts_exact_legacy_shape_without_adopting_schema_marker(
     assert report.schema_marker_present is False
     assert report.session_count == 0
     assert path.read_bytes() == bytes_before
-    with SQLiteStore(path).engine.connect() as connection:
-        marker_count = connection.execute(
-            text(
-                "SELECT count(*) FROM sqlite_master "
-                "WHERE type='table' AND name='schema_metadata'"
-            )
-        ).scalar_one()
-    assert marker_count == 1
+    inspection_engine = create_engine(f"sqlite:///{path}")
+    try:
+        assert "schema_metadata" not in inspect(inspection_engine).get_table_names()
+    finally:
+        inspection_engine.dispose()
 
 
 def test_audit_rejects_future_schema_without_rewriting_version(tmp_path: Path) -> None:
