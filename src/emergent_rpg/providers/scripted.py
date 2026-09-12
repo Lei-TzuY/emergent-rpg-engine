@@ -42,7 +42,11 @@ class DeterministicActionParser(ActionParser):
         if command in {"take", "get", "pick"} and rest:
             return TakeAction(target=rest)
         if command == "give" and len(parts) >= 4:
-            separators = [index for index, token in enumerate(parts[1:], start=1) if token.casefold() == "to"]
+            separators = [
+                index
+                for index, token in enumerate(parts[1:], start=1)
+                if token.casefold() == "to"
+            ]
             if separators:
                 separator = separators[-1]
                 item = " ".join(parts[1:separator]).strip()
