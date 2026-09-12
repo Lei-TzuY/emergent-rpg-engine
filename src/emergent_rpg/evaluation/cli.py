@@ -3,8 +3,15 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from emergent_rpg.evaluation.autonomy import run_autonomy_integration_evaluation
-from emergent_rpg.evaluation.harness import DEFAULT_SEED, run_consistency_evaluation
+from emergent_rpg.evaluation.autonomy import (
+    AutonomyIntegrationReport,
+    run_autonomy_integration_evaluation,
+)
+from emergent_rpg.evaluation.harness import (
+    DEFAULT_SEED,
+    EvaluationReport,
+    run_consistency_evaluation,
+)
 
 
 def main() -> None:
@@ -27,6 +34,7 @@ def main() -> None:
     if args.checkpoint_interval < 1:
         parser.error("--checkpoint-interval must be positive")
 
+    report: AutonomyIntegrationReport | EvaluationReport
     try:
         if args.scenario == "autonomy":
             report = run_autonomy_integration_evaluation(
