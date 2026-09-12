@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from emergent_rpg.api.app import create_app
 from emergent_rpg.domain.actions import TalkAction
 from emergent_rpg.domain.events import FactDiscovered, RelationshipChanged
-from emergent_rpg.domain.models import GameSession, NPC
+from emergent_rpg.domain.models import NPC, GameSession
 from emergent_rpg.engine.reducer import apply_event
 from emergent_rpg.engine.resolver import DeterministicResolver
 from emergent_rpg.engine.service import GameEngine
