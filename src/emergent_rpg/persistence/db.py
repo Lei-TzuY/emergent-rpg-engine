@@ -10,6 +10,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from emergent_rpg.domain.events import Event, parse_event
 from emergent_rpg.domain.models import GameSession, Turn, WorldState
 from emergent_rpg.memory.models import Episode
+from emergent_rpg.persistence.schema import ensure_schema_compatible
 
 
 class Base(DeclarativeBase):
@@ -71,7 +72,7 @@ class SQLiteStore:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
         self.engine = create_engine(f"sqlite:///{self.path}")
-        Base.metadata.create_all(self.engine)
+        self.schema_version = ensure_schema_compatible(self.engine, Base.metadata)
 
     @staticmethod
     def _dump_model(model: BaseModel) -> str:
