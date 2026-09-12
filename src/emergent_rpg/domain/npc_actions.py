@@ -28,6 +28,12 @@ class NPCAcquireIntent(NPCIntentModel):
     item_id: str
 
 
+class NPCDeliverIntent(NPCIntentModel):
+    kind: Literal["deliver"] = "deliver"
+    item_id: str
+    receiver_id: str
+
+
 class NPCCompleteGoalIntent(NPCIntentModel):
     kind: Literal["complete_goal"] = "complete_goal"
 
@@ -43,6 +49,7 @@ NPCIntent = Annotated[
     NPCMoveIntent
     | NPCInspectIntent
     | NPCAcquireIntent
+    | NPCDeliverIntent
     | NPCCompleteGoalIntent
     | NPCShareFactIntent,
     Field(discriminator="kind"),
@@ -63,6 +70,7 @@ class NPCPlanningContext(BaseModel):
     known_item_locations: dict[str, str] = Field(default_factory=dict)
     visible_item_ids: set[str] = Field(default_factory=set)
     inventory_item_ids: set[str] = Field(default_factory=set)
+    visible_entity_ids: set[str] = Field(default_factory=set)
     visible_npc_ids: set[str] = Field(default_factory=set)
     goals: list[NPCGoal] = Field(default_factory=list)
     completed_goal_ids: set[str] = Field(default_factory=set)

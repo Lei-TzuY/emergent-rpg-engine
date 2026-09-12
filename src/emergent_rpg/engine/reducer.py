@@ -10,6 +10,7 @@ from emergent_rpg.domain.events import (
     ItemDropped,
     NPCFactShared,
     NPCGoalCompleted,
+    NPCItemDelivered,
     NPCItemLocationObserved,
     NPCLearnedFact,
     NPCLocationMapped,
@@ -61,6 +62,19 @@ def apply_event(state: WorldState, event: Event) -> WorldState:
             del npc.knowledge.item_location_beliefs[event.item_id]
         else:
             raise ReductionError("negative item observation does not match NPC belief")
+    elif isinstance(event, NPCItemDelivered):
+        source = new_state.entities[event.source_npc_id]
+        if not isinstance(source, NPC):
+            raise ReductionError("NPCItemDelivered source is not an NPC")
+        receiver = new_state.entities[event.receiver_id]
+        item = new_state.items[event.item_id]
+        if item.owner_id != source.id or item.id not in source.state.inventory:
+            raise ReductionError("NPCItemDelivered source does not own item")
+        source.state.inventory.remove(item.id)
+        if item.id not in receiver.state.inventory:
+            receiver.state.inventory.append(item.id)
+        item.owner_id = receiver.id
+        item.location_id = None
     elif isinstance(event, NPCFactShared):
         receiver = new_state.entities[event.receiver_npc_id]
         if not isinstance(receiver, NPC):

@@ -12,6 +12,7 @@ from emergent_rpg.domain.events import (
     ItemAcquired,
     NPCFactShared,
     NPCGoalCompleted,
+    NPCItemDelivered,
     NPCItemLocationObserved,
     NPCLocationMapped,
     NPCMoved,
@@ -125,13 +126,24 @@ def validate_state(
                         f"{entity_id} goal {goal.id} references missing location {goal.target_id}",
                     )
                 if (
-                    goal.kind in {"investigate_item", "acquire_item"}
+                    goal.kind in {"investigate_item", "acquire_item", "deliver_item"}
                     and goal.target_id not in state.items
                 ):
                     report.add_error(
                         "invalid_npc_goal",
                         f"{entity_id} goal {goal.id} references missing item {goal.target_id}",
                     )
+                if goal.kind == "deliver_item":
+                    if goal.receiver_id not in state.entities or goal.receiver_id == entity_id:
+                        report.add_error(
+                            "invalid_npc_goal",
+                            f"{entity_id} goal {goal.id} references invalid delivery receiver",
+                        )
+                    if goal.delivery_location_id not in state.locations:
+                        report.add_error(
+                            "invalid_npc_goal",
+                            f"{entity_id} goal {goal.id} references invalid delivery location",
+                        )
             missing = entity.knowledge.facts_known - state.facts.keys()
             if missing:
                 report.add_error(
@@ -272,6 +284,8 @@ def validate_event_preconditions(state: WorldState, event: Event) -> ValidationR
         _validate_npc_location_mapped(state, event, report)
     elif isinstance(event, NPCItemLocationObserved):
         _validate_npc_item_location_observed(state, event, report)
+    elif isinstance(event, NPCItemDelivered):
+        _validate_npc_item_delivered(state, event, report)
     elif isinstance(event, NPCFactShared):
         _validate_npc_fact_shared(state, event, report)
     elif isinstance(event, NPCGoalCompleted):
@@ -701,6 +715,73 @@ def _validate_npc_item_location_observed(
             )
 
 
+def _validate_npc_item_delivered(
+    state: WorldState,
+    event: NPCItemDelivered,
+    report: ValidationReport,
+) -> None:
+    source = state.entities.get(event.source_npc_id)
+    if not isinstance(source, NPC):
+        report.add_error("nonexistent_entity", f"missing delivery source {event.source_npc_id}")
+        return
+    receiver = state.entities.get(event.receiver_id)
+    if receiver is None or receiver.id == source.id:
+        report.add_error("invalid_npc_item_delivery", "delivery receiver is invalid")
+        return
+    item = state.items.get(event.item_id)
+    if item is None:
+        report.add_error("invalid_npc_item_delivery", f"missing delivery item {event.item_id}")
+        return
+    goal = next((goal for goal in source.planning_goals if goal.id == event.goal_id), None)
+    if goal is None:
+        report.add_error("invalid_npc_item_delivery", f"missing delivery goal {event.goal_id}")
+        return
+    if (
+        goal.kind != "deliver_item"
+        or goal.target_id != item.id
+        or goal.receiver_id != receiver.id
+    ):
+        report.add_error(
+            "invalid_npc_item_delivery",
+            "delivery event does not match configured goal",
+        )
+        return
+    if event.goal_id in source.completed_goal_ids:
+        report.add_error("invalid_npc_item_delivery", "delivery goal is already complete")
+    missing_required_facts = goal.required_fact_ids - source.knowledge.facts_known
+    if missing_required_facts:
+        report.add_error(
+            "invalid_npc_item_delivery",
+            f"delivery source lacks goal prerequisites: {sorted(missing_required_facts)}",
+        )
+    if not source.state.alive or not source.state.conscious:
+        report.add_error("inactive_participant", f"{source.id} cannot deliver an item")
+    if not receiver.state.alive or not receiver.state.conscious:
+        report.add_error("inactive_participant", f"{receiver.id} cannot receive an item")
+    if source.state.current_location != receiver.state.current_location:
+        report.add_error(
+            "invalid_npc_item_delivery",
+            "delivery participants must be physically co-located",
+        )
+    if goal.delivery_location_id != source.state.current_location:
+        report.add_error(
+            "invalid_npc_item_delivery",
+            "delivery does not occur at the configured location",
+        )
+    if item.owner_id != source.id or item.id not in source.state.inventory:
+        report.add_error(
+            "invalid_npc_item_delivery",
+            "delivery source does not canonically own the item",
+        )
+    if item.id in receiver.state.inventory:
+        report.add_error(
+            "invalid_npc_item_delivery",
+            "delivery receiver already has the item",
+        )
+    if "portable" not in item.flags:
+        report.add_error("invalid_npc_item_delivery", f"item {item.id} is not portable")
+
+
 def _validate_npc_fact_shared(
     state: WorldState,
     event: NPCFactShared,
@@ -792,6 +873,18 @@ def _validate_npc_goal_completed(
             report.add_error("invalid_npc_goal", "acquisition evidence item does not exist")
         elif item.owner_id != npc.id or item.id not in npc.state.inventory:
             report.add_error("invalid_npc_goal", "NPC does not own acquisition evidence")
+    elif event.method == "delivered_item":
+        if goal.kind != "deliver_item" or goal.target_id != event.evidence_id:
+            report.add_error("invalid_npc_goal", "goal completion does not match delivery goal")
+            return
+        item = state.items.get(event.evidence_id)
+        receiver = state.entities.get(goal.receiver_id or "")
+        if item is None or receiver is None:
+            report.add_error("invalid_npc_goal", "delivery evidence does not exist")
+        elif item.owner_id != receiver.id or item.id not in receiver.state.inventory:
+            report.add_error("invalid_npc_goal", "delivery receiver does not own evidence item")
+        elif item.id in npc.state.inventory:
+            report.add_error("invalid_npc_goal", "delivery source still owns evidence item")
 
 
 def _known_facts_for_observer(
