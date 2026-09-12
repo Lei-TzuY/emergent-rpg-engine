@@ -206,6 +206,7 @@ class SimulationState(BaseModel):
     next_due_absolute_minute: int = Field(default=8 * 60 + 5, ge=0)
     max_catch_up_cycles: int = Field(default=12, ge=1, le=100)
     max_npc_actions_per_cycle: int = Field(default=3, ge=1, le=20)
+    max_social_actions_per_cycle: int = Field(default=1, ge=1, le=20)
     max_scheduled_events_per_turn: int = Field(default=4, ge=1, le=50)
 
 
