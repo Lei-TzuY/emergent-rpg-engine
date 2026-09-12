@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from typer.testing import CliRunner
+
+from emergent_rpg.cli.app import app
 from emergent_rpg.domain.events import FactInferred, NPCFactShared
 from emergent_rpg.domain.models import NPC, GameSession
 from emergent_rpg.domain.npc_actions import NPCMoveIntent, NPCShareFactIntent
@@ -233,3 +236,43 @@ def test_social_phase_persists_replays_and_triggers_receiver_inference(tmp_path:
     restarted = GameEngine(SQLiteStore(db_path))
     assert restarted.store.load_state(session.id) == after
     assert restarted.replay_session(session.id) == after
+
+
+def test_npc_social_step_cli_executes_and_persists_share(tmp_path: Path) -> None:
+    state = build_demo_world()
+    arden, sera = _co_locate(state, "npc_arden", "npc_sera")
+    arden.knowledge.facts_known = {"fact_schedule"}
+    sera.knowledge.facts_known.clear()
+
+    db_path = tmp_path / "npc-social-cli.db"
+    store = SQLiteStore(db_path)
+    session = GameSession(
+        id="npc-social-cli",
+        name="NPC social CLI",
+        world_pack="test-fact-sharing",
+        created_at="2026-09-12T00:00:00+00:00",
+    )
+    store.create_session(session, state)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "npc-social-step",
+            session.id,
+            "--db",
+            str(db_path),
+            "--max-actions",
+            "1",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "NPC social phase: 1 action(s)" in result.output
+    assert "[OK] npc_arden: share_fact" in result.output
+
+    persisted_store = SQLiteStore(db_path)
+    persisted = persisted_store.load_state(session.id)
+    persisted_sera = persisted.entities[sera.id]
+    assert isinstance(persisted_sera, NPC)
+    assert "fact_schedule" in persisted_sera.knowledge.facts_known
+    assert GameEngine(persisted_store).replay_session(session.id) == persisted
