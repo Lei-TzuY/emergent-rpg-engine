@@ -280,6 +280,6 @@ def import_session_archive(
             db.commit()
     except IntegrityError as exc:
         raise SessionArchiveError(
-            "session archive conflicts with existing event or episode provenance in this database"
+            "archive conflicts with existing event or episode provenance"
         ) from exc
     return session
