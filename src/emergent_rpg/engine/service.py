@@ -257,6 +257,7 @@ class GameEngine:
         *,
         turn_number: int,
         max_actions: int,
+        offscreen_only: bool,
     ) -> tuple[NPCPhaseResult, WorldState]:
         if not 1 <= max_actions <= 20:
             raise ValueError("max_actions must be between 1 and 20")
@@ -267,11 +268,13 @@ class GameEngine:
         involved_npc_ids: set[str] = set()
         actions_attempted = 0
         actions_executed = 0
+        player_location = candidate.player().state.current_location
 
         npc_ids = sorted(
             entity_id
             for entity_id, entity in candidate.entities.items()
             if entity.kind == "npc"
+            and (not offscreen_only or entity.state.current_location != player_location)
         )
         for npc_id in npc_ids:
             if actions_attempted >= max_actions:
@@ -400,6 +403,15 @@ class GameEngine:
                 offscreen_only=True,
             )
             emitted_events.extend(phase.emitted_events)
+
+            social_phase, candidate = self._execute_npc_social_phase_on_state(
+                candidate,
+                turn_number=turn_number,
+                max_actions=candidate.simulation.max_social_actions_per_cycle,
+                offscreen_only=True,
+            )
+            emitted_events.extend(social_phase.emitted_events)
+
             marker = SimulationCycleProcessed(
                 turn_number=turn_number,
                 scheduled_absolute_minute=scheduled_minute,
@@ -461,6 +473,7 @@ class GameEngine:
             before,
             turn_number=before.turn_number + 1,
             max_actions=max_actions,
+            offscreen_only=False,
         )
         if not phase.emitted_events:
             return phase, before
