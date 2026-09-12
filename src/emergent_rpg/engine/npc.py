@@ -120,17 +120,15 @@ class DeterministicNPCPlanner:
                 intents.append(intent)
             if len(intents) >= max_steps:
                 break
-
-        if (
-            not intents
-            and context.known_fact_ids
-            and context.visible_npc_ids
-            and max_steps > 0
-        ):
-            intents.append(
-                NPCShareFactIntent(receiver_id=sorted(context.visible_npc_ids)[0])
-            )
         return NPCPlan(npc_id=context.npc_id, intents=intents)
+
+    @staticmethod
+    def plan_fact_share(context: NPCPlanningContext) -> NPCShareFactIntent | None:
+        if context.movement_blocked or not context.known_fact_ids:
+            return None
+        if not context.visible_npc_ids:
+            return None
+        return NPCShareFactIntent(receiver_id=sorted(context.visible_npc_ids)[0])
 
     @staticmethod
     def _intent_for_goal(
