@@ -10,6 +10,7 @@ from emergent_rpg.domain.events import (
     ItemAcquired,
     NPCFactShared,
     NPCGoalCompleted,
+    NPCItemDelivered,
     NPCItemLocationObserved,
     NPCLocationMapped,
     NPCMoved,
@@ -19,6 +20,7 @@ from emergent_rpg.domain.models import NPC, NPCGoal, WorldState
 from emergent_rpg.domain.npc_actions import (
     NPCAcquireIntent,
     NPCCompleteGoalIntent,
+    NPCDeliverIntent,
     NPCInspectIntent,
     NPCIntent,
     NPCMoveIntent,
@@ -71,6 +73,14 @@ def build_npc_planning_context(state: WorldState, npc_id: str) -> NPCPlanningCon
     # closures replace that local adjacency, while remote mapped locations keep
     # only the static topology the NPC already knows.
     known_routes[location.id] = set(accessible_exits.values())
+    visible_entity_ids = {
+        other.id
+        for other in state.entities.values()
+        if other.id != entity.id
+        and other.state.current_location == location.id
+        and other.state.alive
+        and other.state.conscious
+    }
     return NPCPlanningContext(
         npc_id=entity.id,
         npc_name=entity.name,
@@ -82,14 +92,11 @@ def build_npc_planning_context(state: WorldState, npc_id: str) -> NPCPlanningCon
             item.id for item in state.items.values() if item.location_id == location.id
         },
         inventory_item_ids=set(entity.state.inventory),
+        visible_entity_ids=visible_entity_ids,
         visible_npc_ids={
-            other.id
-            for other in state.entities.values()
-            if isinstance(other, NPC)
-            and other.id != entity.id
-            and other.state.current_location == location.id
-            and other.state.alive
-            and other.state.conscious
+            other_id
+            for other_id in visible_entity_ids
+            if isinstance(state.entities[other_id], NPC)
         },
         goals=list(entity.planning_goals),
         completed_goal_ids=set(entity.completed_goal_ids),
@@ -159,6 +166,30 @@ class DeterministicNPCPlanner:
                 return NPCMoveIntent(goal_id=goal.id, destination_id=next_hop)
             return None
 
+        if goal.kind == "deliver_item":
+            receiver_id = goal.receiver_id
+            delivery_location_id = goal.delivery_location_id
+            if receiver_id is None or delivery_location_id is None:
+                return None
+            if goal.target_id not in context.inventory_item_ids:
+                return None
+            if context.current_location_id != delivery_location_id:
+                next_hop = deterministic_next_hop(
+                    context.current_location_id,
+                    delivery_location_id,
+                    context.known_routes,
+                )
+                if next_hop is not None:
+                    return NPCMoveIntent(goal_id=goal.id, destination_id=next_hop)
+                return None
+            if receiver_id in context.visible_entity_ids:
+                return NPCDeliverIntent(
+                    goal_id=goal.id,
+                    item_id=goal.target_id,
+                    receiver_id=receiver_id,
+                )
+            return None
+
         if goal.kind in {"investigate_item", "acquire_item"}:
             if goal.kind == "investigate_item":
                 available = context.visible_item_ids | context.inventory_item_ids
@@ -221,6 +252,8 @@ class DeterministicNPCResolver:
                 result = self._resolve_move(state, entity, goal, intent, turn_number)
             elif isinstance(intent, NPCAcquireIntent):
                 result = self._resolve_acquire(state, entity, goal, intent, turn_number)
+            elif isinstance(intent, NPCDeliverIntent):
+                result = self._resolve_deliver(state, entity, goal, intent, turn_number)
             elif isinstance(intent, NPCInspectIntent):
                 result = self._resolve_inspect(state, entity, goal, intent, turn_number)
             elif isinstance(intent, NPCCompleteGoalIntent):
@@ -395,6 +428,15 @@ class DeterministicNPCResolver:
 
         if goal.kind == "reach_location":
             target_location = goal.target_id
+        elif goal.kind == "deliver_item":
+            item = state.items.get(goal.target_id)
+            if item is None:
+                return NPCActionResult(accepted=False, reason="Delivery item does not exist.")
+            if item.owner_id != npc.id or goal.target_id not in npc.state.inventory:
+                return NPCActionResult(accepted=False, reason="NPC does not own the delivery item.")
+            if goal.delivery_location_id is None:
+                return NPCActionResult(accepted=False, reason="Delivery location is not configured.")
+            target_location = goal.delivery_location_id
         elif goal.kind in {"investigate_item", "acquire_item"}:
             if goal.kind == "investigate_item":
                 missing_reason = "Investigation target does not exist."
@@ -518,6 +560,66 @@ class DeterministicNPCResolver:
         )
 
     @classmethod
+    def _resolve_deliver(
+        cls,
+        state: WorldState,
+        npc: NPC,
+        goal: NPCGoal,
+        intent: NPCDeliverIntent,
+        turn_number: int,
+    ) -> NPCActionResult:
+        if (
+            goal.kind != "deliver_item"
+            or goal.target_id != intent.item_id
+            or goal.receiver_id != intent.receiver_id
+        ):
+            return NPCActionResult(
+                accepted=False,
+                reason="Delivery does not satisfy the NPC goal.",
+            )
+        item = state.items.get(intent.item_id)
+        if item is None:
+            return NPCActionResult(accepted=False, reason="Delivery item does not exist.")
+        if item.owner_id != npc.id or item.id not in npc.state.inventory:
+            return NPCActionResult(accepted=False, reason="NPC does not own the delivery item.")
+        receiver = state.entities.get(intent.receiver_id)
+        if receiver is None or receiver.id == npc.id:
+            return NPCActionResult(accepted=False, reason="Delivery receiver does not exist.")
+        if not receiver.state.alive or not receiver.state.conscious:
+            return NPCActionResult(accepted=False, reason="Delivery receiver cannot interact.")
+        if goal.delivery_location_id != npc.state.current_location:
+            return NPCActionResult(accepted=False, reason="NPC is not at the delivery location.")
+        if receiver.state.current_location != npc.state.current_location:
+            return NPCActionResult(accepted=False, reason="Delivery receiver is not here.")
+        if "portable" not in item.flags:
+            return NPCActionResult(accepted=False, reason="Delivery item is not portable.")
+
+        events = cls._map_if_new(npc, npc.state.current_location, turn_number)
+        events.append(
+            NPCItemDelivered(
+                turn_number=turn_number,
+                source_npc_id=npc.id,
+                receiver_id=receiver.id,
+                item_id=item.id,
+                goal_id=goal.id,
+            )
+        )
+        events.append(
+            NPCGoalCompleted(
+                turn_number=turn_number,
+                npc_id=npc.id,
+                goal_id=goal.id,
+                method="delivered_item",
+                evidence_id=item.id,
+            )
+        )
+        return NPCActionResult(
+            accepted=True,
+            emitted_events=events,
+            tags={"npc_item", "npc_delivery"},
+        )
+
+    @classmethod
     def _resolve_inspect(
         cls,
         state: WorldState,
@@ -601,7 +703,7 @@ class DeterministicNPCResolver:
         goal: NPCGoal,
         turn_number: int,
     ) -> NPCActionResult:
-        method: Literal["reached_location", "acquired_item"]
+        method: Literal["reached_location", "acquired_item", "delivered_item"]
         if goal.kind == "reach_location" and npc.state.current_location == goal.target_id:
             method = "reached_location"
             evidence_id = goal.target_id
@@ -610,6 +712,18 @@ class DeterministicNPCResolver:
             if item is None or item.owner_id != npc.id or goal.target_id not in npc.state.inventory:
                 return NPCActionResult(accepted=False, reason="NPC goal is not satisfied yet.")
             method = "acquired_item"
+            evidence_id = item.id
+        elif goal.kind == "deliver_item":
+            item = state.items.get(goal.target_id)
+            receiver = state.entities.get(goal.receiver_id or "")
+            if (
+                item is None
+                or receiver is None
+                or item.owner_id != receiver.id
+                or item.id not in receiver.state.inventory
+            ):
+                return NPCActionResult(accepted=False, reason="NPC goal is not satisfied yet.")
+            method = "delivered_item"
             evidence_id = item.id
         else:
             return NPCActionResult(accepted=False, reason="NPC goal is not satisfied yet.")
