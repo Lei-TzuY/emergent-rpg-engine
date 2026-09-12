@@ -8,6 +8,13 @@ import typer
 from emergent_rpg.domain.models import NPC, WorldState
 from emergent_rpg.engine.environment import EnvironmentalRules
 from emergent_rpg.engine.service import GameEngine
+from emergent_rpg.persistence.archive import (
+    SessionArchiveError,
+    build_session_archive,
+    import_session_archive,
+    load_session_archive,
+    write_session_archive,
+)
 from emergent_rpg.persistence.db import SQLiteStore
 from emergent_rpg.providers.errors import ProviderError
 from emergent_rpg.providers.factory import (
@@ -128,6 +135,52 @@ def history(
         marker = "OK" if turn.accepted else "REJECTED"
         typer.echo(f"T{turn.turn_number:03d} [{marker}] > {turn.raw_input}")
         typer.echo(f"  {turn.narration}")
+
+
+@app.command("export-session")
+def export_session(
+    session_id: Annotated[str | None, typer.Argument()] = None,
+    db: Annotated[Path, DB_OPTION] = DEFAULT_DB,
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Destination JSON archive path."),
+    ] = Path("session-archive.json"),
+    overwrite: Annotated[
+        bool,
+        typer.Option("--overwrite", help="Replace an existing archive file."),
+    ] = False,
+) -> None:
+    store = SQLiteStore(db)
+    resolved = _resolve_session(store, session_id)
+    try:
+        archive = build_session_archive(store, resolved)
+        write_session_archive(output, archive, overwrite=overwrite)
+    except SessionArchiveError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(
+        f"Exported session {resolved} to {output} "
+        f"({len(archive.events)} events, {len(archive.turns)} turns)."
+    )
+
+
+@app.command("import-session")
+def import_session(
+    archive_path: Annotated[Path, typer.Argument(help="Portable session archive JSON.")],
+    db: Annotated[Path, DB_OPTION] = DEFAULT_DB,
+    name: Annotated[str | None, typer.Option(help="Imported session name override.")] = None,
+) -> None:
+    try:
+        archive = load_session_archive(archive_path)
+    except SessionArchiveError as exc:
+        raise typer.BadParameter(str(exc), param_hint="archive_path") from exc
+
+    store = SQLiteStore(db)
+    try:
+        session = import_session_archive(store, archive, name=name)
+    except SessionArchiveError as exc:
+        raise typer.BadParameter(str(exc), param_hint="archive_path") from exc
+    typer.echo(f"Imported session {session.id} ({session.name}) from {archive_path}")
+    typer.echo(_render_state(store.load_state(session.id)))
 
 
 @app.command("npc-step")
