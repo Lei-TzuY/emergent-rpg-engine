@@ -6,6 +6,7 @@ from emergent_rpg.domain.events import (
     Event,
     FactDiscovered,
     NPCGoalCompleted,
+    NPCItemLocationObserved,
     NPCLocationMapped,
     NPCMoved,
 )
@@ -67,6 +68,7 @@ def build_npc_planning_context(state: WorldState, npc_id: str) -> NPCPlanningCon
         current_location_id=location.id,
         exits=accessible_exits,
         known_routes=known_routes,
+        known_item_locations=dict(entity.knowledge.item_location_beliefs),
         visible_item_ids={
             item.id for item in state.items.values() if item.location_id == location.id
         },
@@ -139,6 +141,21 @@ class DeterministicNPCPlanner:
             available = context.visible_item_ids | context.inventory_item_ids
             if goal.target_id in available:
                 return NPCInspectIntent(goal_id=goal.id, item_id=goal.target_id)
+            remembered_location = context.known_item_locations.get(goal.target_id)
+            if remembered_location is None:
+                return None
+            if remembered_location == context.current_location_id:
+                # The item is not visible but this is where the NPC remembers it.
+                # Inspect becomes an explicit local search that can invalidate the
+                # stale belief through a typed observation event.
+                return NPCInspectIntent(goal_id=goal.id, item_id=goal.target_id)
+            next_hop = deterministic_next_hop(
+                context.current_location_id,
+                remembered_location,
+                context.known_routes,
+            )
+            if next_hop is not None:
+                return NPCMoveIntent(goal_id=goal.id, destination_id=next_hop)
         return None
 
 
@@ -163,12 +180,25 @@ class DeterministicNPCResolver:
             return NPCActionResult(accepted=False, reason="NPC goal is already complete.")
 
         if isinstance(intent, NPCMoveIntent):
-            return self._resolve_move(state, entity, goal, intent, turn_number)
-        if isinstance(intent, NPCInspectIntent):
-            return self._resolve_inspect(state, entity, goal, intent, turn_number)
-        if isinstance(intent, NPCCompleteGoalIntent):
-            return self._resolve_completion(entity, goal, turn_number)
-        return NPCActionResult(accepted=False, reason="Unsupported NPC intent.")
+            result = self._resolve_move(state, entity, goal, intent, turn_number)
+        elif isinstance(intent, NPCInspectIntent):
+            result = self._resolve_inspect(state, entity, goal, intent, turn_number)
+        elif isinstance(intent, NPCCompleteGoalIntent):
+            result = self._resolve_completion(entity, goal, turn_number)
+        else:
+            return NPCActionResult(accepted=False, reason="Unsupported NPC intent.")
+
+        if not result.accepted:
+            return result
+        observation_events = self._tracked_item_observations(state, entity, turn_number)
+        if not observation_events:
+            return result
+        return result.model_copy(
+            update={
+                "emitted_events": [*observation_events, *result.emitted_events],
+                "tags": result.tags | {"npc_observation"},
+            }
+        )
 
     @staticmethod
     def _goal(npc: NPC, goal_id: str) -> NPCGoal | None:
@@ -186,6 +216,50 @@ class DeterministicNPCResolver:
             )
         ]
 
+    @staticmethod
+    def _tracked_item_observations(
+        state: WorldState,
+        npc: NPC,
+        turn_number: int,
+    ) -> list[Event]:
+        location_id = npc.state.current_location
+        observations: list[Event] = []
+        seen_item_ids: set[str] = set()
+        goals = sorted(npc.planning_goals, key=lambda goal: goal.id)
+        for goal in goals:
+            if goal.id in npc.completed_goal_ids or goal.kind != "investigate_item":
+                continue
+            item_id = goal.target_id
+            if item_id in seen_item_ids:
+                continue
+            seen_item_ids.add(item_id)
+            item = state.items.get(item_id)
+            if item is None:
+                continue
+            remembered_location = npc.knowledge.item_location_beliefs.get(item_id)
+            if item.location_id == location_id:
+                if remembered_location != location_id:
+                    observations.append(
+                        NPCItemLocationObserved(
+                            turn_number=turn_number,
+                            npc_id=npc.id,
+                            item_id=item_id,
+                            location_id=location_id,
+                            present=True,
+                        )
+                    )
+            elif remembered_location == location_id:
+                observations.append(
+                    NPCItemLocationObserved(
+                        turn_number=turn_number,
+                        npc_id=npc.id,
+                        item_id=item_id,
+                        location_id=location_id,
+                        present=False,
+                    )
+                )
+        return observations
+
     @classmethod
     def _resolve_move(
         cls,
@@ -195,8 +269,6 @@ class DeterministicNPCResolver:
         intent: NPCMoveIntent,
         turn_number: int,
     ) -> NPCActionResult:
-        if goal.kind != "reach_location":
-            return NPCActionResult(accepted=False, reason="Move does not satisfy the NPC goal.")
         if any(condition.incapacitating for condition in npc.state.status_conditions):
             return NPCActionResult(accepted=False, reason="NPC movement is blocked.")
         location = state.locations[npc.state.current_location]
@@ -210,10 +282,30 @@ class DeterministicNPCResolver:
                 reason=f"NPC route is blocked by: {blockers}.",
             )
 
+        if goal.kind == "reach_location":
+            target_location = goal.target_id
+        elif goal.kind == "investigate_item":
+            item = state.items.get(goal.target_id)
+            if item is None:
+                return NPCActionResult(accepted=False, reason="Investigation target does not exist.")
+            if item.owner_id == npc.id or item.location_id == location.id:
+                return NPCActionResult(
+                    accepted=False,
+                    reason="Investigation target is already accessible here.",
+                )
+            target_location = npc.knowledge.item_location_beliefs.get(goal.target_id)
+            if target_location is None:
+                return NPCActionResult(
+                    accepted=False,
+                    reason="NPC does not know where the investigation target is.",
+                )
+        else:
+            return NPCActionResult(accepted=False, reason="Move does not satisfy the NPC goal.")
+
         context = build_npc_planning_context(state, npc.id)
         expected_next_hop = deterministic_next_hop(
             context.current_location_id,
-            goal.target_id,
+            target_location,
             context.known_routes,
         )
         if expected_next_hop != intent.destination_id:
@@ -232,7 +324,7 @@ class DeterministicNPCResolver:
             )
         )
         events.extend(cls._map_if_new(npc, intent.destination_id, turn_number))
-        if intent.destination_id == goal.target_id:
+        if goal.kind == "reach_location" and intent.destination_id == target_location:
             events.append(
                 NPCGoalCompleted(
                     turn_number=turn_number,
@@ -263,6 +355,13 @@ class DeterministicNPCResolver:
             return NPCActionResult(accepted=False, reason="Inspection target does not exist.")
         available = item.owner_id == npc.id or item.location_id == npc.state.current_location
         if not available:
+            remembered_location = npc.knowledge.item_location_beliefs.get(item.id)
+            if remembered_location == npc.state.current_location:
+                return NPCActionResult(
+                    accepted=True,
+                    reason="Item is no longer at the remembered location.",
+                    tags={"npc_search"},
+                )
             return NPCActionResult(accepted=False, reason="Inspection target is not accessible.")
 
         events = cls._map_if_new(npc, npc.state.current_location, turn_number)
