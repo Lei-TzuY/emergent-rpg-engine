@@ -467,9 +467,15 @@ class DeterministicNPCResolver:
         if item is None:
             return NPCActionResult(accepted=False, reason="Acquisition target does not exist.")
         if item.owner_id == npc.id:
-            return NPCActionResult(accepted=False, reason="NPC already owns the acquisition target.")
+            return NPCActionResult(
+                accepted=False,
+                reason="NPC already owns the acquisition target.",
+            )
         if item.owner_id is not None:
-            return NPCActionResult(accepted=False, reason="Acquisition target is owned by someone else.")
+            return NPCActionResult(
+                accepted=False,
+                reason="Acquisition target is owned by someone else.",
+            )
         if item.location_id != npc.state.current_location:
             return NPCActionResult(accepted=False, reason="Acquisition target is not here.")
         if "portable" not in item.flags:
