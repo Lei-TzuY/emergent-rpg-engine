@@ -146,6 +146,25 @@ class DialogueRelationshipRule(BaseModel):
         return self
 
 
+class ItemTurnInConsequenceRule(BaseModel):
+    id: str = Field(min_length=1)
+    receiver_npc_id: EntityId
+    item_id: ItemId
+    required_goal_id: str | None = Field(default=None, min_length=1)
+    required_player_fact_ids: set[FactId] = Field(default_factory=set)
+    required_receiver_fact_ids: set[FactId] = Field(default_factory=set)
+    relationship_delta: int = Field(ge=-100, le=100)
+    reward_fact_id: FactId | None = None
+    priority: int = Field(default=0, ge=-100, le=100)
+    observation: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def nonzero_relationship_delta(self) -> ItemTurnInConsequenceRule:
+        if self.relationship_delta == 0:
+            raise ValueError("item turn-in relationship delta must be non-zero")
+        return self
+
+
 class TraversalEffect(BaseModel):
     extra_minutes: int = Field(default=0, ge=0, le=60)
 
@@ -252,6 +271,10 @@ class WorldState(BaseModel):
     inference_rules: dict[str, FactInferenceRule] = Field(default_factory=dict)
     dialogue_relationship_rules: list[DialogueRelationshipRule] = Field(default_factory=list)
     applied_dialogue_relationship_rule_ids: set[str] = Field(default_factory=set)
+    item_turn_in_consequence_rules: list[ItemTurnInConsequenceRule] = Field(
+        default_factory=list
+    )
+    applied_item_turn_in_consequence_rule_ids: set[str] = Field(default_factory=set)
     simulation: SimulationState = Field(default_factory=SimulationState)
     scheduled_location_conditions: list[ScheduledLocationCondition] = Field(default_factory=list)
     scheduled_location_condition_expirations: list[ScheduledLocationConditionExpiry] = Field(
@@ -262,21 +285,72 @@ class WorldState(BaseModel):
 
     @model_validator(mode="after")
     def canonical_reference_consistency(self) -> WorldState:
-        rule_ids = [rule.id for rule in self.dialogue_relationship_rules]
-        if len(rule_ids) != len(set(rule_ids)):
+        dialogue_rule_ids = [rule.id for rule in self.dialogue_relationship_rules]
+        if len(dialogue_rule_ids) != len(set(dialogue_rule_ids)):
             raise ValueError("dialogue relationship rule ids must be unique")
-        unknown_applied = self.applied_dialogue_relationship_rule_ids - set(rule_ids)
-        if unknown_applied:
+        unknown_dialogue_applied = self.applied_dialogue_relationship_rule_ids - set(
+            dialogue_rule_ids
+        )
+        if unknown_dialogue_applied:
             raise ValueError("applied dialogue relationship rules must reference configured rules")
-        for rule in self.dialogue_relationship_rules:
-            speaker = self.entities.get(rule.speaker_id)
+
+        turn_in_rule_ids = [rule.id for rule in self.item_turn_in_consequence_rules]
+        if len(turn_in_rule_ids) != len(set(turn_in_rule_ids)):
+            raise ValueError("item turn-in consequence rule ids must be unique")
+        if set(dialogue_rule_ids) & set(turn_in_rule_ids):
+            raise ValueError("dialogue and item turn-in rule ids must not overlap")
+        unknown_turn_in_applied = self.applied_item_turn_in_consequence_rule_ids - set(
+            turn_in_rule_ids
+        )
+        if unknown_turn_in_applied:
+            raise ValueError("applied item turn-in rules must reference configured rules")
+
+        for dialogue_rule in self.dialogue_relationship_rules:
+            speaker = self.entities.get(dialogue_rule.speaker_id)
             if not isinstance(speaker, NPC):
                 raise ValueError("dialogue relationship rule speaker must reference an NPC")
-            if rule.listener_id not in self.entities:
+            if dialogue_rule.listener_id not in self.entities:
                 raise ValueError("dialogue relationship rule listener must reference an entity")
-            missing_facts = rule.required_listener_fact_ids - self.facts.keys()
+            missing_facts = dialogue_rule.required_listener_fact_ids - self.facts.keys()
             if missing_facts:
                 raise ValueError("dialogue relationship rule references missing facts")
+
+        for turn_in_rule in self.item_turn_in_consequence_rules:
+            receiver = self.entities.get(turn_in_rule.receiver_npc_id)
+            if not isinstance(receiver, NPC):
+                raise ValueError("item turn-in rule receiver must reference an NPC")
+            if turn_in_rule.item_id not in self.items:
+                raise ValueError("item turn-in rule must reference a configured item")
+            required_facts = (
+                turn_in_rule.required_player_fact_ids
+                | turn_in_rule.required_receiver_fact_ids
+            )
+            if required_facts - self.facts.keys():
+                raise ValueError("item turn-in rule prerequisites must reference configured facts")
+            if turn_in_rule.reward_fact_id is not None:
+                reward_fact = self.facts.get(turn_in_rule.reward_fact_id)
+                if reward_fact is None:
+                    raise ValueError("item turn-in rule reward fact must be configured")
+                if reward_fact.discoverability == "inferred":
+                    raise ValueError("item turn-in rule cannot directly reward an inferred fact")
+            if turn_in_rule.required_goal_id is not None:
+                goal = next(
+                    (
+                        goal
+                        for goal in receiver.planning_goals
+                        if goal.id == turn_in_rule.required_goal_id
+                    ),
+                    None,
+                )
+                if (
+                    goal is None
+                    or goal.kind != "acquire_item"
+                    or goal.target_id != turn_in_rule.item_id
+                ):
+                    raise ValueError(
+                        "item turn-in rule goal must be a matching acquire_item goal"
+                    )
+
         for entity in self.entities.values():
             if not isinstance(entity, NPC):
                 continue
