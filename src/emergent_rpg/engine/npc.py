@@ -396,23 +396,23 @@ class DeterministicNPCResolver:
         if goal.kind == "reach_location":
             target_location = goal.target_id
         elif goal.kind in {"investigate_item", "acquire_item"}:
+            if goal.kind == "investigate_item":
+                missing_reason = "Investigation target does not exist."
+                local_reason = "Investigation target is already accessible here."
+                unknown_reason = "NPC does not know where the investigation target is."
+            else:
+                missing_reason = "Acquisition target does not exist."
+                local_reason = "Acquisition target is already accessible here."
+                unknown_reason = "NPC does not know where the acquisition target is."
+
             item = state.items.get(goal.target_id)
             if item is None:
-                return NPCActionResult(
-                    accepted=False,
-                    reason="Item goal target does not exist.",
-                )
+                return NPCActionResult(accepted=False, reason=missing_reason)
             if item.owner_id == npc.id or item.location_id == location.id:
-                return NPCActionResult(
-                    accepted=False,
-                    reason="Item goal target is already accessible here.",
-                )
+                return NPCActionResult(accepted=False, reason=local_reason)
             remembered_location = npc.knowledge.item_location_beliefs.get(goal.target_id)
             if remembered_location is None:
-                return NPCActionResult(
-                    accepted=False,
-                    reason="NPC does not know where the item goal target is.",
-                )
+                return NPCActionResult(accepted=False, reason=unknown_reason)
             target_location = remembered_location
         else:
             return NPCActionResult(accepted=False, reason="Move does not satisfy the NPC goal.")
