@@ -114,7 +114,7 @@ def test_give_can_turn_in_matching_npc_acquisition_goal() -> None:
             id="lio_receive_key",
             kind="acquire_item",
             target_id="item_brass_key",
-            priority=200,
+            priority=100,
         )
     )
 
