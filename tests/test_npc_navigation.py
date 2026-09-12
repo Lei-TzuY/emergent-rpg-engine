@@ -4,9 +4,9 @@ from pathlib import Path
 
 from emergent_rpg.domain.events import NPCGoalCompleted, NPCMoved
 from emergent_rpg.domain.models import (
+    NPC,
     GameSession,
     LocationCondition,
-    NPC,
     NPCGoal,
     RouteEffect,
 )
