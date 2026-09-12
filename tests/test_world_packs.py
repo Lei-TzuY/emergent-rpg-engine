@@ -7,6 +7,7 @@ import pytest
 from typer.testing import CliRunner
 
 from emergent_rpg.cli.app import app
+from emergent_rpg.domain.models import WorldState
 from emergent_rpg.engine.reducer import replay
 from emergent_rpg.persistence.db import SQLiteStore
 from emergent_rpg.world.demo import build_demo_world
@@ -18,7 +19,7 @@ def _write_pack(
     *,
     pack_id: str = "custom-relay",
     name: str = "Custom Relay",
-    state=None,
+    state: WorldState | None = None,
     format_version: int = 1,
     extra: dict[str, object] | None = None,
 ) -> Path:
@@ -103,16 +104,40 @@ def test_cli_world_pack_name_override_does_not_change_pack_identity(tmp_path: Pa
     assert session.world_pack == "custom-relay"
 
 
+def test_play_banner_uses_persisted_custom_session_name(tmp_path: Path) -> None:
+    db_path = tmp_path / "game.db"
+    pack_path = _write_pack(tmp_path / "world.json", name="Copper Frontier")
+    runner = CliRunner()
+    created = runner.invoke(
+        app,
+        ["new", "--db", str(db_path), "--world", str(pack_path)],
+    )
+    assert created.exit_code == 0, created.output
+    store = SQLiteStore(db_path)
+    session_id = store.latest_session_id()
+    assert session_id is not None
+
+    played = runner.invoke(
+        app,
+        ["play", session_id, "--db", str(db_path)],
+        input="quit\n",
+    )
+
+    assert played.exit_code == 0, played.output
+    assert "Copper Frontier — provider=scripted" in played.output
+
+
 def test_invalid_world_pack_fails_before_database_creation(tmp_path: Path) -> None:
     db_path = tmp_path / "game.db"
     state = build_demo_world()
+    initial_state = state.model_dump(mode="json")
+    initial_state["player_id"] = "missing-player"
     payload = {
         "format_version": 1,
         "id": "broken-world",
         "name": "Broken World",
-        "initial_state": state.model_dump(mode="json"),
+        "initial_state": initial_state,
     }
-    payload["initial_state"]["player_id"] = "missing-player"  # type: ignore[index]
     pack_path = tmp_path / "broken.json"
     pack_path.write_text(json.dumps(payload), encoding="utf-8")
 
