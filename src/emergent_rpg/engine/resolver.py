@@ -20,6 +20,7 @@ from emergent_rpg.domain.events import (
     TimeAdvanced,
 )
 from emergent_rpg.domain.models import NPC, Fact, Item, WorldState
+from emergent_rpg.engine.dialogue import DialogueRelationshipPolicy
 from emergent_rpg.engine.environment import EnvironmentalRules
 from emergent_rpg.engine.mystery import MysteryGraph
 from emergent_rpg.engine.social import SocialDisclosurePolicy
@@ -182,24 +183,32 @@ class DeterministicResolver:
                     player.id,
                 )
             )
+            newly_revealed: set[str] = set()
             if revealable:
                 fact_id = revealable[0]
+                newly_revealed.add(fact_id)
                 events.append(
                     FactDiscovered(turn_number=turn, fact_id=fact_id, observer_id=player.id)
                 )
                 observations.append(f'"{state.facts[fact_id].proposition}"')
-            if "fact_relay_sabotage" in state.player_known_facts and npc.id == "npc_arden":
+            relationship_rule = DialogueRelationshipPolicy.next_rule(
+                state,
+                npc.id,
+                player.id,
+                additional_listener_fact_ids=newly_revealed,
+            )
+            if relationship_rule is not None:
                 events.append(
                     RelationshipChanged(
                         turn_number=turn,
                         source_id=npc.id,
                         target_id=player.id,
-                        delta=5,
+                        delta=relationship_rule.delta,
+                        rule_id=relationship_rule.id,
                     )
                 )
-                observations.append(
-                    "Arden's guarded posture eases; you have earned a little trust."
-                )
+                if relationship_rule.observation:
+                    observations.append(relationship_rule.observation)
             return ActionResult(
                 accepted=True,
                 emitted_events=events,
