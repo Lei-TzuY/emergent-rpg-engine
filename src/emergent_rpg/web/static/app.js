@@ -9,6 +9,7 @@ const ui = {
   worldTime: document.querySelector("#world-time"),
   conditions: document.querySelector("#location-conditions"),
   exits: document.querySelector("#exits"),
+  blockedExits: document.querySelector("#blocked-exits"),
   items: document.querySelector("#visible-items"),
   npcs: document.querySelector("#visible-npcs"),
   inventory: document.querySelector("#inventory"),
@@ -110,6 +111,14 @@ function renderState(view) {
   ui.turnCounter.textContent = `Turn ${view.turn_number}`;
   renderConditions(view.location_conditions || []);
   renderChips(ui.exits, Object.entries(view.exits).map(([alias, name]) => `${alias} → ${name}`));
+  renderChips(
+    ui.blockedExits,
+    (view.blocked_exits || []).map((exit) => {
+      const blockers = exit.blocked_by.join(", ");
+      return `${exit.alias} → ${exit.destination_name} · blocked by ${blockers}`;
+    }),
+    "none",
+  );
   renderChips(ui.items, view.visible_items.map((item) => item.name), "nothing portable");
   renderChips(ui.npcs, view.visible_npcs.map((npc) => npc.name), "none");
   renderChips(ui.inventory, view.inventory.map((item) => item.name), "empty");

@@ -3,6 +3,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from emergent_rpg.domain.models import GameSession, WorldState
+from emergent_rpg.engine.environment import EnvironmentalRules
 
 
 class SessionCreateRequest(BaseModel):
@@ -35,12 +36,20 @@ class LocationConditionView(BaseModel):
     traversal_extra_minutes: int = 0
 
 
+class BlockedExitView(BaseModel):
+    alias: str
+    destination_id: str
+    destination_name: str
+    blocked_by: list[str] = Field(default_factory=list)
+
+
 class PlayerStateView(BaseModel):
     turn_number: int
     time: str
     location_id: str
     location_name: str
     exits: dict[str, str]
+    blocked_exits: list[BlockedExitView] = Field(default_factory=list)
     location_conditions: list[LocationConditionView] = Field(default_factory=list)
     visible_items: list[VisibleItem] = Field(default_factory=list)
     visible_npcs: list[VisibleNPC] = Field(default_factory=list)
@@ -76,6 +85,7 @@ class HistoryView(BaseModel):
 def project_player_state(state: WorldState) -> PlayerStateView:
     player = state.player()
     location = state.locations[player.state.current_location]
+    rules = EnvironmentalRules()
     visible_items = sorted(
         (
             VisibleItem(id=item.id, name=item.name)
@@ -117,16 +127,28 @@ def project_player_state(state: WorldState) -> PlayerStateView:
         )
         for _, condition in sorted(location.active_conditions.items())
     ]
+    accessible_exits = rules.accessible_exits(state, location.id)
     exits = {
         alias: state.locations[destination].name
-        for alias, destination in sorted(location.exits.items())
+        for alias, destination in accessible_exits.items()
     }
+    blocked_exits = [
+        BlockedExitView(
+            alias=alias,
+            destination_id=destination,
+            destination_name=state.locations[destination].name,
+            blocked_by=rules.route_access(state, location.id, destination).condition_names,
+        )
+        for alias, destination in sorted(location.exits.items())
+        if not rules.route_access(state, location.id, destination).allowed
+    ]
     return PlayerStateView(
         turn_number=state.turn_number,
         time=state.clock.display(),
         location_id=location.id,
         location_name=location.name,
         exits=exits,
+        blocked_exits=blocked_exits,
         location_conditions=conditions,
         visible_items=visible_items,
         visible_npcs=visible_npcs,

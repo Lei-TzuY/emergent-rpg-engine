@@ -117,11 +117,16 @@ class TraversalEffect(BaseModel):
     extra_minutes: int = Field(default=0, ge=0, le=60)
 
 
+class RouteEffect(BaseModel):
+    blocked_destination_ids: set[LocationId] = Field(default_factory=set)
+
+
 class LocationCondition(BaseModel):
     code: str = Field(min_length=1)
     name: str = Field(min_length=1)
     description: str = Field(min_length=1)
     traversal: TraversalEffect | None = None
+    route: RouteEffect | None = None
 
 
 class Location(BaseModel):

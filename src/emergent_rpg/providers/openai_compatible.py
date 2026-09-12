@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from emergent_rpg.domain.actions import PlayerAction, parse_action
 from emergent_rpg.domain.models import NPC, WorldState
+from emergent_rpg.engine.environment import EnvironmentalRules
 from emergent_rpg.engine.narrative import ScenePlan
 from emergent_rpg.providers.base import ActionParser, NarrativeGenerator
 from emergent_rpg.providers.control import ProviderRuntimeControls, ProviderStage
@@ -232,6 +233,7 @@ class OpenAICompatibleActionParser(ActionParser):
 def _visible_action_surface(state: WorldState) -> dict[str, object]:
     player = state.player()
     location = state.locations[player.state.current_location]
+    rules = EnvironmentalRules()
     visible_items = sorted(
         item.name for item in state.items.values() if item.location_id == location.id
     )
@@ -243,15 +245,26 @@ def _visible_action_surface(state: WorldState) -> dict[str, object]:
         and entity.state.alive
         and entity.state.conscious
     )
+    accessible = rules.accessible_exits(state, location.id)
     exits = sorted(
-        {exit_name for exit_name in location.exits}
-        | {state.locations[destination].name for destination in location.exits.values()}
+        {exit_name for exit_name in accessible}
+        | {state.locations[destination].name for destination in accessible.values()}
     )
+    blocked_exits = [
+        {
+            "alias": alias,
+            "destination": state.locations[destination].name,
+            "blocked_by": rules.route_access(state, location.id, destination).condition_names,
+        }
+        for alias, destination in sorted(location.exits.items())
+        if not rules.route_access(state, location.id, destination).allowed
+    ]
     inventory = sorted(state.items[item_id].name for item_id in player.state.inventory)
     movement_blocked = any(status.incapacitating for status in player.state.status_conditions)
     return {
         "location": location.name,
         "exits": exits,
+        "blocked_exits": blocked_exits,
         "visible_items": visible_items,
         "visible_npcs": visible_npcs,
         "inventory": inventory,

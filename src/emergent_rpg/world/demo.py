@@ -11,6 +11,7 @@ from emergent_rpg.domain.models import (
     NPCGoal,
     NPCKnowledge,
     PlayerCharacter,
+    RouteEffect,
     ScheduledLocationCondition,
     TraversalEffect,
     TruthStatus,
@@ -366,6 +367,7 @@ def build_demo_world() -> WorldState:
                         "turning the black grit into a stinging horizontal sheet."
                     ),
                     traversal=TraversalEffect(extra_minutes=5),
+                    route=RouteEffect(blocked_destination_ids={"ridge"}),
                 ),
             )
         ],

@@ -6,6 +6,7 @@ from typing import Annotated
 import typer
 
 from emergent_rpg.domain.models import NPC, WorldState
+from emergent_rpg.engine.environment import EnvironmentalRules
 from emergent_rpg.engine.service import GameEngine
 from emergent_rpg.persistence.db import SQLiteStore
 from emergent_rpg.providers.errors import ProviderError
@@ -49,13 +50,20 @@ def _resolve_session(store: SQLiteStore, session_id: str | None) -> str:
 def _render_state(state: WorldState) -> str:
     player = state.player()
     location = state.locations[player.state.current_location]
+    rules = EnvironmentalRules()
     visible_items = [item.name for item in state.items.values() if item.location_id == location.id]
     npcs = [
         entity.name
         for entity in state.entities.values()
         if isinstance(entity, NPC) and entity.state.current_location == location.id
     ]
-    exits = [state.locations[dest].name for dest in location.exits.values()]
+    accessible = rules.accessible_exits(state, location.id)
+    exits = [state.locations[destination].name for destination in accessible.values()]
+    blocked = [
+        f"{state.locations[destination].name} ({', '.join(access.condition_names)})"
+        for alias, access in rules.blocked_exits(state, location.id).items()
+        for destination in [location.exits[alias]]
+    ]
     inventory = [state.items[item_id].name for item_id in player.state.inventory]
     return "\n".join(
         [
@@ -63,7 +71,8 @@ def _render_state(state: WorldState) -> str:
             f"Time: {state.clock.display()} | Turn: {state.turn_number}",
             f"Visible: {', '.join(visible_items) if visible_items else 'nothing portable'}",
             f"NPCs: {', '.join(npcs) if npcs else 'none'}",
-            f"Exits: {', '.join(exits)}",
+            f"Exits: {', '.join(exits) if exits else 'none'}",
+            f"Blocked routes: {', '.join(blocked) if blocked else 'none'}",
             f"Inventory: {', '.join(inventory) if inventory else 'empty'}",
         ]
     )
