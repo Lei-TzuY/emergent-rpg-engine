@@ -68,12 +68,18 @@ def test_cli_export_import_round_trip_preserves_session_history(tmp_path: Path) 
     imported_session = target_store.get_session(imported_id)
     assert imported_session.name == source_session.name
     assert imported_session.world_pack == source_session.world_pack
-    assert target_store.load_initial_state(imported_id) == source_store.load_initial_state(source_id)
+    assert target_store.load_initial_state(imported_id) == source_store.load_initial_state(
+        source_id
+    )
     assert target_store.load_state(imported_id) == source_store.load_state(source_id)
-    assert _event_payloads(target_store, imported_id) == _event_payloads(source_store, source_id)
+    assert _event_payloads(target_store, imported_id) == _event_payloads(
+        source_store, source_id
+    )
     assert _turn_payloads(target_store, imported_id) == _turn_payloads(source_store, source_id)
     assert target_store.list_episodes(imported_id) == source_store.list_episodes(source_id)
-    assert GameEngine(target_store).replay_session(imported_id) == target_store.load_state(imported_id)
+    assert GameEngine(target_store).replay_session(imported_id) == target_store.load_state(
+        imported_id
+    )
 
 
 def test_import_name_override_preserves_world_pack_identity(tmp_path: Path) -> None:
