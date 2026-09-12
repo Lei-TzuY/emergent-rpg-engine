@@ -53,9 +53,10 @@ class DeterministicResolver:
             access = self.environmental_rules.route_access(state, location_id, destination)
             if not access.allowed:
                 blockers = ", ".join(access.condition_names)
+                destination_name = state.locations[destination].name
                 return ActionResult(
                     accepted=False,
-                    reason=f"The route to {state.locations[destination].name} is blocked by: {blockers}.",
+                    reason=f"The route to {destination_name} is blocked by: {blockers}.",
                 )
             traversal = self.environmental_rules.traversal_cost(state, location_id)
             observations = [f"You travel to {state.locations[destination].name}."]

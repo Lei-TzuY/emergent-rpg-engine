@@ -13,8 +13,8 @@ from emergent_rpg.domain.events import (
     ScheduledLocationConditionApplied,
 )
 from emergent_rpg.domain.models import (
-    LocationCondition,
     NPC,
+    LocationCondition,
     NPCGoal,
     RouteEffect,
 )

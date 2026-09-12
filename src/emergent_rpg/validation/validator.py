@@ -17,7 +17,7 @@ from emergent_rpg.domain.events import (
     SimulationCycleProcessed,
     TimeAdvanced,
 )
-from emergent_rpg.domain.models import LocationCondition, NPC, PlayerCharacter, WorldState
+from emergent_rpg.domain.models import NPC, LocationCondition, PlayerCharacter, WorldState
 from emergent_rpg.engine.environment import EnvironmentalRules
 from emergent_rpg.validation.models import ValidationReport
 
