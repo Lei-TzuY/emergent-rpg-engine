@@ -2,12 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from emergent_rpg.domain.events import (
-    NPCGoalCompleted,
-    NPCItemLocationObserved,
-    NPCMoved,
-)
-from emergent_rpg.domain.models import GameSession, NPC, NPCGoal
+from emergent_rpg.domain.events import NPCGoalCompleted, NPCItemLocationObserved
+from emergent_rpg.domain.models import NPC, GameSession, NPCGoal
 from emergent_rpg.domain.npc_actions import NPCInspectIntent, NPCMoveIntent
 from emergent_rpg.engine.npc import (
     DeterministicNPCPlanner,
