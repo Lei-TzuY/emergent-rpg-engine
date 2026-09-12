@@ -296,12 +296,13 @@ class DeterministicNPCResolver:
                     accepted=False,
                     reason="Investigation target is already accessible here.",
                 )
-            target_location = npc.knowledge.item_location_beliefs.get(goal.target_id)
-            if target_location is None:
+            remembered_location = npc.knowledge.item_location_beliefs.get(goal.target_id)
+            if remembered_location is None:
                 return NPCActionResult(
                     accepted=False,
                     reason="NPC does not know where the investigation target is.",
                 )
+            target_location = remembered_location
         else:
             return NPCActionResult(accepted=False, reason="Move does not satisfy the NPC goal.")
 
