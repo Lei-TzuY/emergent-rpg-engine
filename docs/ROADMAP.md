@@ -21,7 +21,8 @@ The project advances by coherent executable slices rather than placeholder subsy
 17. **Knowledge-scoped NPC multi-hop navigation / rerouting** — explicit NPC route knowledge, bounded deterministic path selection over known topology, dynamic closure-aware replanning, resolver-validated step execution, persistence, and replay without global-world omniscience. **Complete.**
 18. **Replayable NPC map learning / route discovery** — typed observation-driven expansion of NPC map knowledge, physical-presence validation, reducer-owned knowledge updates, monotonic provenance, off-screen simulation integration, and persistence/replay without cross-observer leakage. **Complete.**
 19. **Knowledge-scoped NPC item pursuit / search** — replayable observer-specific item-location beliefs, pursuit over known topology, stale-belief correction by local observation, and deterministic local inspection without global item-truth leakage. **Complete.**
-20. **Replayable NPC information exchange / fact sharing** — source-aware typed fact transfer between co-located NPCs, speaker-knowledge validation, receiver-only canonical updates, and replayable provenance without bulk private-memory copying. **Next.**
+20. **Replayable NPC information exchange / fact sharing** — source-aware typed fact transfer between co-located NPCs, speaker-knowledge validation, receiver-only canonical updates, explicit bounded social execution, CLI integration, and replayable provenance without bulk private-memory copying. **Complete.**
+21. **Relationship-gated social disclosure / trust policy** — data-driven per-fact disclosure requirements, source→receiver relationship scoring, resolver-enforced eligibility, and deterministic selective sharing without exposing receiver-private knowledge to the planner. **Next.**
 
 ## Milestone 3 invariant
 
@@ -50,7 +51,7 @@ known canonical facts
 → ordinary event validation / reducer / persistence
 ```
 
-Derived facts cannot be injected as ordinary `FactDiscovered` events. Inference events must match a registered rule exactly, the observer must already know every premise, and the conclusion must be marked `discoverability="inferred"`. Contradictions are computed from each observer's own knowledge set, so player/NPC epistemic boundaries remain intact.
+Derived facts cannot be injected as ordinary `FactDiscovered` events. Inference events must match a registered rule exactly, the observer must already know every premise, and the conclusion must be marked inferred. Contradictions are computed from each observer's own knowledge set, so player/NPC epistemic boundaries remain intact.
 
 ## Milestone 5 invariant
 
@@ -338,17 +339,45 @@ The first fully green M19 implementation head `7c5db0c819f01ef2fef1be6e47b7984e8
 
 For seed `20260911`, the long-run gate produced 1,058 submissions, 1,000 accepted turns, 58 deterministic rejections, 2,272 events, 1,058 persisted turns, 1,000 episodes, and final canonical clock minute 4,361. Replay equality, state validity, monotonic clock/player knowledge/event log, item ownership, and event-id uniqueness all remained true with `failures=[]`. The default long-run scenario does not exercise additional item-memory events, so the event count remains the M18 baseline; M19 behavior is covered by dedicated integration regressions. These figures are correctness evidence, not performance measurements.
 
-## Promotion gate for Milestone 20
+## Milestone 20 invariant
 
-NPC facts, maps, and item-location beliefs are still private unless independently learned. The existing `NPCLearnedFact` event can add a fact to one NPC, but it carries no source identity and currently does not represent a validated social transfer. The next coherent slice should make deliberate NPC-to-NPC fact communication replayable without bulk-copying private memory:
+NPC information exchange is an explicit social action path rather than an implicit planner-side memory copy or ordinary-goal fallback:
 
 ```text
-source NPC known fact + physical co-location with receiver
-→ bounded deterministic share decision / explicit sharing operation
-→ typed source→receiver fact-sharing event
-→ validator proves source knows fact and both NPCs can interact locally
-→ reducer expands receiver facts only
-→ ordinary inference / persistence / replay
+source NPC own known facts + locally visible NPC ids
+→ social planner chooses receiver only
+→ NPCShareFactIntent(receiver_id)
+→ resolver reads canonical source/receiver knowledge
+→ lexical first source-known / receiver-unknown fact
+→ NPCFactShared(source, receiver, fact)
+→ generic precondition validation
+→ reducer updates receiver facts only
+→ receiver-scoped mystery inference
+→ state validation / SQLite commit / replay
 ```
 
-A transfer must reject missing/dead/unconscious/remote participants, an unknown source fact, and a receiver that already knows the fact. It must not copy map topology, item-location beliefs, relationships, or the source's entire fact set. Player knowledge remains separate unless an explicit player-facing interaction independently reveals the fact. Persistence/restart/replay and the existing 1,000-turn continuity gate must remain green.
+The intent contains no `fact_id`, so the planner cannot invent a fact, choose one the source does not know, or inspect the receiver's private fact set. The event validator independently requires distinct existing alive/conscious co-located NPCs, an existing fact, a source that already knows it, and a receiver that does not. The reducer changes only `receiver.knowledge.facts_known`; player knowledge, route maps, item-location beliefs, relationships, inventories, and objective truth metadata remain untouched.
+
+Sharing is deliberately separated from ordinary goal planning and automatic world simulation. The first implementation used an ordinary planner fallback, and full pytest exposed four regressions where blocked/unresolved/completed goals no longer idled and sharing could consume movement/investigation budget. The corrected design adds `GameEngine.run_npc_social_phase()` with its own attempted-action budget and the explicit `emergent-rpg npc-social-step` CLI surface. Ordinary `npc-step` behavior and background simulation retain their previous semantics.
+
+A successful share may immediately unlock ordinary deterministic inference for the receiver, but only from that receiver's post-share knowledge. The source does not inherit receiver-only conclusions. Social phases are persisted as ordinary events/state/turns and must replay exactly after restart.
+
+The final executable M20 implementation head `0dd4b35ac191d72817a66dfa76e6cf2ac31a7f3f` passed standard wheel/package checks, browser-asset verification, Ruff, strict mypy across 45 source files, **134 pytest tests**, and the seeded 1,000-accepted-turn evaluation plus JSON verifier. Focused coverage proves ordinary-goal isolation, planner receiver-only scoping, lexical resolver selection, forged/remote/duplicate/inactive rejection, receiver-only updates, receiver inference, SQLite persistence/restart/replay, and the CLI execution surface.
+
+For seed `20260911`, the long-run gate produced 1,058 submissions, 1,000 accepted turns, 58 deterministic rejections, 2,272 events, 1,058 persisted turns, 1,000 episodes, and final canonical clock minute 4,361. Replay equality, state validity, monotonic clock/player knowledge/event log, item ownership, and event-id uniqueness all remained true with `failures=[]`. The seeded player workload does not invoke the explicit social phase, so the event count remains the M19 baseline; M20 social behavior is covered by dedicated engine/validator/CLI integration regressions.
+
+## Promotion gate for Milestone 21
+
+Relationships are already canonical/replayable state, and `RelationshipChanged` already exists, but M20 intentionally treats every source-known fact as equally shareable. The next coherent slice should make disclosure policy data-driven and relationship-sensitive without exposing receiver-private knowledge to the planner:
+
+```text
+canonical fact disclosure requirement
++ source NPC relationship score toward visible receiver
+→ social planner may choose a locally visible receiver using source-owned social state only
+→ resolver computes source-known / receiver-unknown facts
+→ filter by fact disclosure requirement against source→receiver relationship
+→ deterministic eligible-fact selection
+→ ordinary NPCFactShared validation / reducer / inference / persistence / replay
+```
+
+Disclosure rules must be canonical data rather than fact-id branches. Missing relationship entries need a deterministic neutral default, and relationship scores must remain source-directed rather than silently symmetric. A low-trust receiver must not receive a restricted fact even if co-located, while public facts remain shareable. Changing the source→receiver relationship through ordinary replayable state must change eligibility deterministically without copying the receiver's private knowledge into `NPCPlanningContext`. Forged restricted shares must be rejected by the generic event validator, not merely avoided by the resolver. Existing ordinary NPC planning, explicit social-phase budgeting, persistence/restart/replay, and the 1,000-turn continuity gate must remain green.
