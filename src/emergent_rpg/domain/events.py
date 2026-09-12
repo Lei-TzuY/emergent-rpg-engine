@@ -76,6 +76,16 @@ class NPCGoalCompleted(DomainEvent):
     evidence_id: str
 
 
+class PlayerObjectiveActivated(DomainEvent):
+    type: Literal["player_objective_activated"] = "player_objective_activated"
+    objective_id: str
+
+
+class PlayerObjectiveCompleted(DomainEvent):
+    type: Literal["player_objective_completed"] = "player_objective_completed"
+    objective_id: str
+
+
 class ItemAcquired(DomainEvent):
     type: Literal["item_acquired"] = "item_acquired"
     item_id: str
@@ -176,6 +186,8 @@ Event = Annotated[
     | PlayerItemGiven
     | NPCFactShared
     | NPCGoalCompleted
+    | PlayerObjectiveActivated
+    | PlayerObjectiveCompleted
     | ItemAcquired
     | ItemDropped
     | CharacterDamaged
