@@ -27,6 +27,7 @@ Key boundaries:
 - Mystery deductions are replayable `FactInferred` events with rule/premise provenance.
 - NPC autonomy uses scoped planning contexts, bounded typed intents, and deterministic resolution before any state change.
 - NPC-to-NPC fact sharing uses source-aware replayable events; the planner chooses a receiver only, while the resolver chooses an actually shareable canonical fact.
+- Social disclosure is data-driven: each fact may require a source→receiver relationship threshold, and forged restricted sharing is rejected by generic event validation.
 - Narrative providers cannot mutate canonical state.
 - Provider failure happens before the state/event transaction is committed.
 - Memory retrieval uses recent turns + persisted episodes + canonical facts; optional vectors only rerank existing episodes.
@@ -156,7 +157,7 @@ Run one explicit NPC social-information phase with:
 emergent-rpg npc-social-step --max-actions 3
 ```
 
-The social phase is deliberately separate from ordinary goal planning and automatic off-screen simulation. Its planner selects a locally visible receiver but not a fact; the deterministic resolver chooses the first source-known / receiver-unknown canonical fact, emits a source-aware `NPCFactShared` event, validates co-location and speaker knowledge, updates only the receiver's fact knowledge, and then evaluates ordinary receiver-scoped mystery inference. This prevents social actions from silently stealing movement/investigation budget while keeping information exchange replayable and persistent. See `docs/NPC_FACT_SHARING.md` for the invariant and verification evidence.
+The social phase is deliberately separate from ordinary goal planning and automatic off-screen simulation. Its planner ranks locally visible receivers using only the source NPC's directed relationship scores, but it still does not see receiver-private facts or choose a fact. The deterministic resolver computes source-known / receiver-unknown facts and filters them through each fact's canonical `disclosure_min_relationship`; missing source→receiver relationship entries are neutral score `0`, while ordinary facts default to public threshold `-100`. Generic event validation repeats the same policy so forged restricted sharing cannot bypass trust requirements. Ashfall Relay's `fact_relay_sabotage` is a real restricted clue requiring relationship score `20`. See `docs/NPC_FACT_SHARING.md` and `docs/SOCIAL_DISCLOSURE.md` for the invariants and verification evidence.
 
 The current demo lets Dax pursue a location goal and Lio investigate a locally visible clue. Explicit `npc-step` phases remain available for debugging, while accepted player actions also trigger deterministic off-screen simulation when the canonical world clock reaches a scheduled cadence.
 
@@ -190,7 +191,7 @@ CI runs all three checks on Python 3.12, builds the wheel, verifies packaged bro
 
 ## Current limitations
 
-NPC fact sharing is currently an explicit bounded social phase; relationship-sensitive disclosure policy and automatic social scheduling are not yet implemented. Richer combat/stat systems, authentication/multi-user API concerns, and neural embedding integration also remain future work.
+NPC fact sharing is currently an explicit bounded social phase with relationship-gated disclosure. Automatic off-screen social diffusion/scheduling is not yet integrated into world-simulation cycles. Richer combat/stat systems, authentication/multi-user API concerns, and neural embedding integration also remain future work.
 
 The OpenAI-compatible provider currently targets the common `/chat/completions` JSON shape and intentionally supports text responses only. Live endpoint interoperability depends on the selected server/model and is not claimed by offline CI.
 

@@ -24,6 +24,7 @@ from emergent_rpg.domain.npc_actions import (
 from emergent_rpg.engine.environment import EnvironmentalRules
 from emergent_rpg.engine.mystery import MysteryGraph
 from emergent_rpg.engine.navigation import deterministic_next_hop
+from emergent_rpg.engine.social import SocialDisclosurePolicy
 
 
 class NPCActionResult(BaseModel):
@@ -128,7 +129,11 @@ class DeterministicNPCPlanner:
             return None
         if not context.visible_npc_ids:
             return None
-        return NPCShareFactIntent(receiver_id=sorted(context.visible_npc_ids)[0])
+        receiver_id = min(
+            context.visible_npc_ids,
+            key=lambda npc_id: (-context.relationships.get(npc_id, 0), npc_id),
+        )
+        return NPCShareFactIntent(receiver_id=receiver_id)
 
     @staticmethod
     def _intent_for_goal(
@@ -232,13 +237,27 @@ class DeterministicNPCResolver:
         if receiver.state.current_location != source.state.current_location:
             return NPCActionResult(accepted=False, reason="Fact-sharing receiver is not here.")
 
-        shareable = sorted(
+        new_fact_ids = sorted(
             fact_id
             for fact_id in source.knowledge.facts_known - receiver.knowledge.facts_known
             if fact_id in state.facts
         )
-        if not shareable:
+        if not new_fact_ids:
             return NPCActionResult(accepted=False, reason="NPC has no new fact to share.")
+        shareable = [
+            fact_id
+            for fact_id in new_fact_ids
+            if SocialDisclosurePolicy.can_disclose(
+                state.facts[fact_id],
+                source,
+                receiver.id,
+            )
+        ]
+        if not shareable:
+            return NPCActionResult(
+                accepted=False,
+                reason="NPC relationship is below disclosure requirements.",
+            )
         fact_id = shareable[0]
         return NPCActionResult(
             accepted=True,

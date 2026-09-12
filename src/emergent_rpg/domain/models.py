@@ -192,6 +192,7 @@ class Fact(BaseModel):
     tags: set[str] = Field(default_factory=set)
     discovery_prerequisites: set[FactId] = Field(default_factory=set)
     contradicts: set[FactId] = Field(default_factory=set)
+    disclosure_min_relationship: int = Field(default=-100, ge=-100, le=100)
 
 
 class FactInferenceRule(BaseModel):

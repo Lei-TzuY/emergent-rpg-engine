@@ -22,7 +22,8 @@ The project advances by coherent executable slices rather than placeholder subsy
 18. **Replayable NPC map learning / route discovery** — typed observation-driven expansion of NPC map knowledge, physical-presence validation, reducer-owned knowledge updates, monotonic provenance, off-screen simulation integration, and persistence/replay without cross-observer leakage. **Complete.**
 19. **Knowledge-scoped NPC item pursuit / search** — replayable observer-specific item-location beliefs, pursuit over known topology, stale-belief correction by local observation, and deterministic local inspection without global item-truth leakage. **Complete.**
 20. **Replayable NPC information exchange / fact sharing** — source-aware typed fact transfer between co-located NPCs, speaker-knowledge validation, receiver-only canonical updates, explicit bounded social execution, CLI integration, and replayable provenance without bulk private-memory copying. **Complete.**
-21. **Relationship-gated social disclosure / trust policy** — data-driven per-fact disclosure requirements, source→receiver relationship scoring, resolver-enforced eligibility, and deterministic selective sharing without exposing receiver-private knowledge to the planner. **Next.**
+21. **Relationship-gated social disclosure / trust policy** — data-driven per-fact disclosure requirements, source→receiver relationship scoring, resolver-enforced eligibility, and deterministic selective sharing without exposing receiver-private knowledge to the planner. **Complete.**
+22. **Automatic off-screen social diffusion / simulation integration** — independent canonical social-action budget per simulation cycle, off-screen-only trust-gated fact propagation, ordinary NPC-budget isolation, atomic persistence/replay, and no player-facing metadata leakage. **Next.**
 
 ## Milestone 3 invariant
 
@@ -366,18 +367,44 @@ The final executable M20 implementation head `0dd4b35ac191d72817a66dfa76e6cf2ac3
 
 For seed `20260911`, the long-run gate produced 1,058 submissions, 1,000 accepted turns, 58 deterministic rejections, 2,272 events, 1,058 persisted turns, 1,000 episodes, and final canonical clock minute 4,361. Replay equality, state validity, monotonic clock/player knowledge/event log, item ownership, and event-id uniqueness all remained true with `failures=[]`. The seeded player workload does not invoke the explicit social phase, so the event count remains the M19 baseline; M20 social behavior is covered by dedicated engine/validator/CLI integration regressions.
 
-## Promotion gate for Milestone 21
+## Milestone 21 invariant
 
-Relationships are already canonical/replayable state, and `RelationshipChanged` already exists, but M20 intentionally treats every source-known fact as equally shareable. The next coherent slice should make disclosure policy data-driven and relationship-sensitive without exposing receiver-private knowledge to the planner:
+Selective NPC disclosure is canonical policy rather than a planner convention or fact-id branch:
 
 ```text
-canonical fact disclosure requirement
-+ source NPC relationship score toward visible receiver
-→ social planner may choose a locally visible receiver using source-owned social state only
+Fact.disclosure_min_relationship
++ source NPC directed relationship toward a visible receiver
+→ social planner ranks receiver using source-owned social state only
+→ NPCShareFactIntent(receiver_id)
 → resolver computes source-known / receiver-unknown facts
-→ filter by fact disclosure requirement against source→receiver relationship
-→ deterministic eligible-fact selection
-→ ordinary NPCFactShared validation / reducer / inference / persistence / replay
+→ SocialDisclosurePolicy filters by source→receiver relationship
+→ lexical first eligible fact
+→ NPCFactShared
+→ generic validator repeats disclosure policy
+→ receiver-only reduction / inference / persistence / replay
 ```
 
-Disclosure rules must be canonical data rather than fact-id branches. Missing relationship entries need a deterministic neutral default, and relationship scores must remain source-directed rather than silently symmetric. A low-trust receiver must not receive a restricted fact even if co-located, while public facts remain shareable. Changing the source→receiver relationship through ordinary replayable state must change eligibility deterministically without copying the receiver's private knowledge into `NPCPlanningContext`. Forged restricted shares must be rejected by the generic event validator, not merely avoided by the resolver. Existing ordinary NPC planning, explicit social-phase budgeting, persistence/restart/replay, and the 1,000-turn continuity gate must remain green.
+Every fact carries a bounded relationship threshold. The default is `-100`, so existing/public facts remain shareable and the M20 contract is backwards-compatible. Missing source→receiver relationships resolve to deterministic neutral score `0`. Relationships are directed: receiver→source trust does not authorize disclosure in the opposite direction. Ashfall Relay's `fact_relay_sabotage` is an executable restricted clue requiring source→receiver score `20`.
+
+The planner still never receives receiver-private fact knowledge and cannot choose a fact. It only ranks locally visible receivers by the source NPC's own relationship map, with lexical id tie-breaking. The resolver distinguishes merely-new facts from disclosure-eligible facts, skipping restricted facts when an eligible public fact exists. If every new fact is blocked, the social action is rejected. `validate_event_preconditions()` calls the same `SocialDisclosurePolicy`, so a forged restricted `NPCFactShared` cannot bypass the threshold.
+
+Existing replayable `RelationshipChanged(source_id, target_id, delta)` events can deterministically unlock later disclosure. Focused regressions prove source-directionality, neutral public sharing, restricted withholding, relationship-based unlock, receiver ranking, eligible-public fallback, generic forged-event rejection, and SQLite persistence/replay.
+
+The fully green M21 implementation head `31d73f5695969af26905e40e59c71aa2e30ab920` passed standard wheel/package checks, browser-asset verification, Ruff, strict mypy across **46 source files**, **140 pytest tests**, and the seeded 1,000-accepted-turn evaluation plus JSON verifier.
+
+For seed `20260911`, the long-run gate produced 1,058 submissions, 1,000 accepted turns, 58 deterministic rejections, 2,272 events, 1,058 persisted turns, 1,000 episodes, and final canonical clock minute 4,361. Replay equality, state validity, monotonic clock/player knowledge/event log, item ownership, and event-id uniqueness all remained true with `failures=[]`. The seeded player workload does not invoke the explicit social phase, so the event count remains the M20 baseline; M21 behavior is covered by dedicated trust/disclosure integration regressions.
+
+## Promotion gate for Milestone 22
+
+Trust-aware information exchange is now correct and replayable but still explicit-only. The next coherent slice should integrate the already-validated social phase into scheduled off-screen simulation without reintroducing the M20 action-budget regression:
+
+```text
+canonical simulation cadence
+→ ordinary off-screen NPC goal phase with existing max_npc_actions_per_cycle
+→ separate off-screen social phase with independent max_npc_social_actions_per_cycle
+→ trust-gated NPCFactShared / receiver inference
+→ SimulationCycleProcessed
+→ one atomic player-turn commit / replay
+```
+
+The social budget must be canonical and independent from movement/investigation budget. Automatic social actions must exclude NPCs sharing the player's current location, so private background exchange cannot occur during a visible interaction. The social planner/resolver/validator authority path from M20–M21 must be reused rather than duplicated. Hidden social participant ids and private facts must remain absent from player-facing `Turn`/`Episode` metadata. Narrative-provider failure must still happen before due simulation, preserving zero-partial-commit semantics. Focused tests must prove budget independence, off-screen isolation, trust enforcement, receiver inference, restart/replay, provider-failure atomicity, and player-metadata non-leakage, followed by the existing 1,000-turn continuity gate.
