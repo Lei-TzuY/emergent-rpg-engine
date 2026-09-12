@@ -183,8 +183,9 @@ def play(
         raise typer.BadParameter(str(exc)) from exc
 
     resolved = _resolve_session(engine.store, session_id)
+    session = engine.store.get_session(resolved)
     typer.echo(
-        "Ashfall Relay — "
+        f"{session.name} — "
         f"provider={provider.value}, action-parser={action_parser.value}; "
         "type `help` for commands, `quit` to exit."
     )
