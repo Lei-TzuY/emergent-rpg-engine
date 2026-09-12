@@ -6,6 +6,7 @@ from uuid import uuid4
 from emergent_rpg.domain.actions import PlayerAction
 from emergent_rpg.domain.events import (
     Event,
+    NPCFactShared,
     ScheduledLocationConditionApplied,
     ScheduledLocationConditionExpired,
     SimulationCycleProcessed,
@@ -223,18 +224,23 @@ class GameEngine:
                 if not action_result.accepted:
                     continue
 
+                inference_observer_ids = {npc_id}
                 for event in action_result.emitted_events:
                     candidate = self._apply_validated_event(candidate, event)
                     emitted_events.append(event)
+                    if isinstance(event, NPCFactShared):
+                        inference_observer_ids.add(event.receiver_npc_id)
+                        involved_npc_ids.add(event.receiver_npc_id)
 
-                inferred_events = self.mystery.infer_events(
-                    candidate,
-                    npc_id,
-                    turn_number,
-                )
-                for event in inferred_events:
-                    candidate = self._apply_validated_event(candidate, event)
-                    emitted_events.append(event)
+                for observer_id in sorted(inference_observer_ids):
+                    inferred_events = self.mystery.infer_events(
+                        candidate,
+                        observer_id,
+                        turn_number,
+                    )
+                    for event in inferred_events:
+                        candidate = self._apply_validated_event(candidate, event)
+                        emitted_events.append(event)
 
                 actions_executed += 1
                 involved_npc_ids.add(npc_id)
