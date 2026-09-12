@@ -30,7 +30,8 @@ The project advances by coherent executable slices rather than placeholder subsy
 26. **Knowledge-gated reactive NPC goals** — canonical `required_fact_ids`, acting-NPC-only eligibility, planner/resolver/reducer backstops, and social-learning activation on later goal phases. **Complete.**
 27. **Autonomous NPC item acquisition / custody** — knowledge-scoped acquisition goals, existing `ItemAcquired` authority, generic custody validation, observer-scoped memory cleanup, persistence/replay, and off-screen execution. **Complete.**
 28. **Replayable item handoff / delivery goals** — canonical owner-to-owner custody transfer with exact source/receiver/item/goal provenance, knowledge-scoped rendezvous planning, unique ownership, and replay-safe inventory movement. **Complete.**
-29. **Player→NPC item handoff / quest turn-in** — typed player `GiveAction`, local receiver visibility, deterministic custody transfer, parser/API/browser parity, transactional rejection, and replay-safe player-to-NPC inventory movement. **Next.**
+29. **Player→NPC item handoff / quest turn-in** — typed player `GiveAction`, local receiver visibility, deterministic custody transfer, parser/API/browser parity, transactional rejection, replay-safe player-to-NPC inventory movement, and matching acquisition-goal completion. **Complete.**
+30. **Data-driven item turn-in consequences / rewards** — canonical world-pack rules that match validated handoffs or turn-ins and emit bounded replayable consequences through existing fact/relationship authority. **Next.**
 
 ## Milestone 3 invariant
 
@@ -520,19 +521,42 @@ Item-location beliefs remain observer-specific and are not globally synchronized
 
 The fully green M28 implementation head `7fbe17d0bfa79dadf3056634e17e5649e9801a32` passed standard wheel/package checks, browser-asset verification, Ruff, strict mypy across **47 source files**, **185 pytest tests**, and the seeded 1,000-accepted-turn evaluation plus JSON verifier. For seed `20260911`, the long-run gate produced 1,058 submissions, 1,000 accepted turns, 58 deterministic rejections, 2,274 events, 1,058 persisted turns, 1,000 episodes, and final canonical clock minute 4,361. Replay equality, state validity, monotonic clock/player knowledge/event log, item ownership, and unique event IDs all remained true with `failures=[]`. Detailed evidence is in `docs/NPC_ITEM_DELIVERY.md`.
 
-## Promotion gate for Milestone 29
+## Milestone 29 invariant
 
-Milestone 28 completes NPC-source delivery, including NPC delivery to the player when the player is the configured co-located receiver. The reciprocal player action surface still cannot hand an owned item to an NPC. The next coherent slice should add a player-facing handoff without bypassing the existing parser/resolver/event authority:
+Player-to-NPC handoff extends the same canonical custody model through the player action surface:
 
 ```text
-player-owned inventory item
-+ locally visible active NPC receiver
+player-visible inventory + local active NPC names
 → deterministic or structured GiveAction(item, receiver)
-→ ordinary player resolver
-→ typed canonical custody transfer
-→ generic event validation
-→ reducer removes player inventory + adds NPC inventory
+→ deterministic resolver checks custody / portability / local receiver
+→ PlayerItemGiven(source_player_id, receiver_npc_id, item_id)
+→ reducer rechecks canonical participants and custody
+→ shared owner-to-owner transfer helper
+→ optional NPCGoalCompleted(method="acquired_item")
+→ TimeAdvanced(1)
 → narration / persistence / replay
 ```
 
-The deterministic parser and structured LLM parser must expose only player-visible item/receiver names, not NPC-private state. Remote, missing, inactive, self/invalid, nonportable, unowned, or duplicate-custody transfers must be rejected without partial mutation. Provider/narration failure must preserve the existing transactional zero-commit guarantee. CLI/API/browser raw-text execution, persistence/replay, player-visible state projection, and the real 1,000-turn consistency gate must remain green.
+The provider-visible interaction surface is unchanged; `give` consumes only inventory and co-located active NPC names that were already available to the parser. The player resolver never reads or exposes an NPC's private goal identifiers in observations. A matching receiver-side acquisition goal can complete only after the canonical handoff event and only when its existing fact prerequisites are already known to that NPC.
+
+`PlayerItemGiven` records exact player, receiver, and item provenance. The reducer independently verifies the canonical player, NPC receiver, liveness/consciousness, co-location, portability, source ownership/inventory, and duplicate receiver custody before delegating to the same `_transfer_owned_item()` helper used by `NPCItemDelivered`. Invalid raw actions emit no custody event; forged invalid typed events fail closed before successful mutation.
+
+The fully green M29 implementation head `b50dfccfb9d0111f090f46718b15ad52df2d1e7c` passed standard wheel/package checks, browser-asset verification, Ruff, strict mypy across **47 source files**, **192 pytest tests**, and the seeded 1,000-accepted-turn evaluation plus JSON verifier. Focused coverage proves quoted multi-word deterministic parsing, structured-provider give JSON without hidden NPC state, non-owned/remote/inactive/nonportable rejection, acquisition-goal turn-in, forged remote typed-event rejection, SQLite persistence/replay, and FastAPI/browser raw-text parity.
+
+For seed `20260911`, the long-run gate produced 1,058 submissions, 1,000 accepted turns, 58 deterministic rejections, **2,274 events**, 1,058 persisted turns, 1,000 episodes, and final canonical clock minute 4,361. Replay equality, state validity, monotonic clock/player knowledge/event log, item ownership, and unique event IDs all remained true with `failures=[]`. Detailed evidence is in `docs/PLAYER_ITEM_HANDOFF.md`.
+
+## Promotion gate for Milestone 30
+
+Milestone 29 completes bidirectional player/NPC custody movement and acquisition-goal turn-in, but a successful handoff has no generic world-pack consequence layer beyond custody and goal completion. The next coherent slice should make item turn-in rewards declarative rather than adding quest names or item ids to the resolver:
+
+```text
+validated PlayerItemGiven / matching turn-in context
++ canonical world-pack turn-in rule
+→ deterministic rule match / priority / one-shot gate
+→ existing typed relationship/fact consequence authority
+→ ordinary validation / reduction
+→ canonical applied-rule provenance
+→ narration / persistence / replay
+```
+
+Rules must match canonical participants/item and optional goal/fact prerequisites without exposing NPC-private planning state to the player or provider. Repeated delivery must not farm one-shot rewards. Consequences should reuse existing `RelationshipChanged`, fact discovery/learning, or other established event authority rather than mutating state directly. Unmatched/invalid handoffs must produce no reward, and provider/narration failure must preserve the existing zero-partial-commit guarantee. CLI/API/browser execution, persistence/replay, and the real 1,000-turn continuity gate must remain green.
