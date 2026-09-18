@@ -7,6 +7,8 @@ from emergent_rpg.domain.actions import PlayerAction
 from emergent_rpg.domain.events import (
     Event,
     NPCFactShared,
+    PlayerObjectiveActivated,
+    PlayerObjectiveCompleted,
     ScheduledLocationConditionApplied,
     ScheduledLocationConditionExpired,
     SimulationCycleProcessed,
@@ -14,6 +16,7 @@ from emergent_rpg.domain.events import (
 from emergent_rpg.domain.models import GameSession, Turn, WorldState
 from emergent_rpg.engine.mystery import MysteryGraph
 from emergent_rpg.engine.narrative import DeterministicNarrativePlanner
+from emergent_rpg.engine.objectives import PlayerObjectivePolicy
 from emergent_rpg.engine.npc import (
     DeterministicNPCPlanner,
     DeterministicNPCResolver,
@@ -119,7 +122,34 @@ class GameEngine:
                 }
             )
 
-        state_report = validate_state(candidate, previous=before)
+        objective_events = PlayerObjectivePolicy.progression_events(
+            candidate,
+            candidate.turn_number,
+        )
+        if objective_events:
+            observations = list(result.observations)
+            for event in objective_events:
+                candidate = self._apply_validated_event(candidate, event)
+                player_events.append(event)
+                objective = PlayerObjectivePolicy.objective_by_id(candidate, event.objective_id)
+                title = objective.title if objective is not None else event.objective_id
+                if isinstance(event, PlayerObjectiveActivated):
+                    observations.append(f"Objective started: {title}")
+                elif isinstance(event, PlayerObjectiveCompleted):
+                    observations.append(f"Objective completed: {title}")
+            result = result.model_copy(
+                update={
+                    "emitted_events": player_events,
+                    "observations": observations,
+                    "tags": result.tags | {"objective"},
+                }
+            )
+
+        state_report = validate_state(
+            candidate,
+            previous=before,
+            transition_events=player_events,
+        )
         if not state_report.valid:
             raise TransitionRejected(str(state_report.issues))
 
@@ -137,7 +167,7 @@ class GameEngine:
         final_report = validate_state(
             candidate,
             previous=before,
-            transition_events=simulation_events,
+            transition_events=[*player_events, *simulation_events],
         )
         if not final_report.valid:
             raise TransitionRejected(str(final_report.issues))
