@@ -17,6 +17,8 @@ from emergent_rpg.domain.events import (
     NPCMoved,
     PlayerItemGiven,
     PlayerMoved,
+    PlayerObjectiveActivated,
+    PlayerObjectiveCompleted,
     RelationshipChanged,
     ScheduledLocationConditionApplied,
     ScheduledLocationConditionExpired,
@@ -139,6 +141,17 @@ def apply_event(state: WorldState, event: Event) -> WorldState:
         if not goal.required_fact_ids <= npc.knowledge.facts_known:
             raise ReductionError("NPCGoalCompleted prerequisites are not known")
         npc.completed_goal_ids.add(event.goal_id)
+    elif isinstance(event, PlayerObjectiveActivated):
+        if event.objective_id in new_state.active_player_objective_ids:
+            raise ReductionError("PlayerObjectiveActivated target is already active")
+        if event.objective_id in new_state.completed_player_objective_ids:
+            raise ReductionError("PlayerObjectiveActivated target is already complete")
+        new_state.active_player_objective_ids.add(event.objective_id)
+    elif isinstance(event, PlayerObjectiveCompleted):
+        if event.objective_id not in new_state.active_player_objective_ids:
+            raise ReductionError("PlayerObjectiveCompleted target is not active")
+        new_state.active_player_objective_ids.remove(event.objective_id)
+        new_state.completed_player_objective_ids.add(event.objective_id)
     elif isinstance(event, ItemAcquired):
         item = new_state.items[event.item_id]
         if item.owner_id is not None and item.owner_id in new_state.entities:
