@@ -50,6 +50,10 @@ def test_create_and_read_session_exposes_only_player_visible_state(tmp_path: Pat
     assert "fact_blackout_window" not in wire
     assert "planning_goals" not in wire
     assert "knowledge" not in wire
+    assert "objective_trace_blackout" not in wire
+    assert "activation_required_fact_ids" not in wire
+    assert body["state"]["active_objectives"] == []
+    assert body["state"]["completed_objectives"] == []
 
 
 def test_action_endpoint_uses_existing_engine_and_persists_result(tmp_path: Path) -> None:

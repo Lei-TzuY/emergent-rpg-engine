@@ -12,6 +12,7 @@ from emergent_rpg.domain.models import (
     NPCGoal,
     NPCKnowledge,
     PlayerCharacter,
+    PlayerObjective,
     RouteEffect,
     ScheduledLocationCondition,
     TraversalEffect,
@@ -356,6 +357,22 @@ def build_demo_world() -> WorldState:
         items=items,
         facts=facts,
         inference_rules=inference_rules,
+        player_objectives=[
+            PlayerObjective(
+                id="objective_trace_blackout",
+                title="Trace the blackout",
+                description="Establish what caused the relay blackout.",
+                activation_required_fact_ids={"fact_blackout_window"},
+                completion_required_fact_ids={"fact_inside_job"},
+            ),
+            PlayerObjective(
+                id="objective_expose_sabotage",
+                title="Expose the sabotage",
+                description="Connect the evidence into a complete sabotage case.",
+                activation_required_completed_objective_ids={"objective_trace_blackout"},
+                completion_required_fact_ids={"fact_coordinated_sabotage"},
+            ),
+        ],
         dialogue_relationship_rules=[
             DialogueRelationshipRule(
                 id="arden_trusts_sabotage_evidence",

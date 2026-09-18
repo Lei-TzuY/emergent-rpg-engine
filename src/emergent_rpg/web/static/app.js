@@ -14,6 +14,8 @@ const ui = {
   npcs: document.querySelector("#visible-npcs"),
   inventory: document.querySelector("#inventory"),
   facts: document.querySelector("#known-facts"),
+  activeObjectives: document.querySelector("#active-objectives"),
+  completedObjectives: document.querySelector("#completed-objectives"),
   turnCounter: document.querySelector("#turn-counter"),
   history: document.querySelector("#history-log"),
   actionForm: document.querySelector("#action-form"),
@@ -105,6 +107,22 @@ function renderConditions(conditions) {
   });
 }
 
+function renderObjectives(container, objectives) {
+  container.replaceChildren();
+  if (!objectives.length) {
+    const empty = document.createElement("li");
+    empty.className = "muted";
+    empty.textContent = "none";
+    container.append(empty);
+    return;
+  }
+  objectives.forEach((objective) => {
+    const item = document.createElement("li");
+    item.textContent = `${objective.title}: ${objective.description}`;
+    container.append(item);
+  });
+}
+
 function renderState(view) {
   ui.location.textContent = view.location_name;
   ui.worldTime.textContent = `${view.time} · Turn ${view.turn_number}`;
@@ -122,6 +140,8 @@ function renderState(view) {
   renderChips(ui.items, view.visible_items.map((item) => item.name), "nothing portable");
   renderChips(ui.npcs, view.visible_npcs.map((npc) => npc.name), "none");
   renderChips(ui.inventory, view.inventory.map((item) => item.name), "empty");
+  renderObjectives(ui.activeObjectives, view.active_objectives || []);
+  renderObjectives(ui.completedObjectives, view.completed_objectives || []);
 
   ui.facts.replaceChildren();
   if (!view.known_facts.length) {

@@ -29,6 +29,12 @@ class KnownFact(BaseModel):
     proposition: str
 
 
+class PlayerObjectiveView(BaseModel):
+    id: str
+    title: str
+    description: str
+
+
 class LocationConditionView(BaseModel):
     code: str
     name: str
@@ -55,6 +61,8 @@ class PlayerStateView(BaseModel):
     visible_npcs: list[VisibleNPC] = Field(default_factory=list)
     inventory: list[VisibleItem] = Field(default_factory=list)
     known_facts: list[KnownFact] = Field(default_factory=list)
+    active_objectives: list[PlayerObjectiveView] = Field(default_factory=list)
+    completed_objectives: list[PlayerObjectiveView] = Field(default_factory=list)
 
 
 class SessionView(BaseModel):
@@ -116,6 +124,23 @@ def project_player_state(state: WorldState) -> PlayerStateView:
         KnownFact(id=fact_id, proposition=state.facts[fact_id].proposition)
         for fact_id in sorted(state.player_known_facts)
     ]
+    objective_by_id = {objective.id: objective for objective in state.player_objectives}
+    active_objectives = [
+        PlayerObjectiveView(
+            id=objective_id,
+            title=objective_by_id[objective_id].title,
+            description=objective_by_id[objective_id].description,
+        )
+        for objective_id in sorted(state.active_player_objective_ids)
+    ]
+    completed_objectives = [
+        PlayerObjectiveView(
+            id=objective_id,
+            title=objective_by_id[objective_id].title,
+            description=objective_by_id[objective_id].description,
+        )
+        for objective_id in sorted(state.completed_player_objective_ids)
+    ]
     conditions = [
         LocationConditionView(
             code=condition.code,
@@ -154,4 +179,6 @@ def project_player_state(state: WorldState) -> PlayerStateView:
         visible_npcs=visible_npcs,
         inventory=inventory,
         known_facts=known_facts,
+        active_objectives=active_objectives,
+        completed_objectives=completed_objectives,
     )
