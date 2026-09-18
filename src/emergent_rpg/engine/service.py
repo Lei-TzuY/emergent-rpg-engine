@@ -16,7 +16,6 @@ from emergent_rpg.domain.events import (
 from emergent_rpg.domain.models import GameSession, Turn, WorldState
 from emergent_rpg.engine.mystery import MysteryGraph
 from emergent_rpg.engine.narrative import DeterministicNarrativePlanner
-from emergent_rpg.engine.objectives import PlayerObjectivePolicy
 from emergent_rpg.engine.npc import (
     DeterministicNPCPlanner,
     DeterministicNPCResolver,
@@ -24,6 +23,7 @@ from emergent_rpg.engine.npc import (
     NPCPhaseResult,
     build_npc_planning_context,
 )
+from emergent_rpg.engine.objectives import PlayerObjectivePolicy
 from emergent_rpg.engine.reducer import apply_event, replay
 from emergent_rpg.engine.resolver import ActionResult, DeterministicResolver
 from emergent_rpg.engine.simulation import (
