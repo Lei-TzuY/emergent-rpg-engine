@@ -165,6 +165,35 @@ class ItemTurnInConsequenceRule(BaseModel):
         return self
 
 
+class PlayerObjective(BaseModel):
+    id: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    description: str = Field(min_length=1)
+    activation_required_fact_ids: set[FactId] = Field(default_factory=set)
+    activation_required_item_ids: set[ItemId] = Field(default_factory=set)
+    activation_required_turn_in_rule_ids: set[str] = Field(default_factory=set)
+    activation_required_completed_objective_ids: set[str] = Field(default_factory=set)
+    completion_required_fact_ids: set[FactId] = Field(default_factory=set)
+    completion_required_item_ids: set[ItemId] = Field(default_factory=set)
+    completion_required_turn_in_rule_ids: set[str] = Field(default_factory=set)
+    completion_required_completed_objective_ids: set[str] = Field(default_factory=set)
+
+    @model_validator(mode="after")
+    def completion_gate_required(self) -> PlayerObjective:
+        if not (
+            self.completion_required_fact_ids
+            or self.completion_required_item_ids
+            or self.completion_required_turn_in_rule_ids
+            or self.completion_required_completed_objective_ids
+        ):
+            raise ValueError("player objective requires at least one completion condition")
+        if self.id in self.activation_required_completed_objective_ids:
+            raise ValueError("player objective cannot require itself for activation")
+        if self.id in self.completion_required_completed_objective_ids:
+            raise ValueError("player objective cannot require itself for completion")
+        return self
+
+
 class TraversalEffect(BaseModel):
     extra_minutes: int = Field(default=0, ge=0, le=60)
 
@@ -275,6 +304,9 @@ class WorldState(BaseModel):
         default_factory=list
     )
     applied_item_turn_in_consequence_rule_ids: set[str] = Field(default_factory=set)
+    player_objectives: list[PlayerObjective] = Field(default_factory=list)
+    active_player_objective_ids: set[str] = Field(default_factory=set)
+    completed_player_objective_ids: set[str] = Field(default_factory=set)
     simulation: SimulationState = Field(default_factory=SimulationState)
     scheduled_location_conditions: list[ScheduledLocationCondition] = Field(default_factory=list)
     scheduled_location_condition_expirations: list[ScheduledLocationConditionExpiry] = Field(
@@ -304,6 +336,17 @@ class WorldState(BaseModel):
         )
         if unknown_turn_in_applied:
             raise ValueError("applied item turn-in rules must reference configured rules")
+
+        objective_ids = [objective.id for objective in self.player_objectives]
+        objective_id_set = set(objective_ids)
+        if len(objective_ids) != len(objective_id_set):
+            raise ValueError("player objective ids must be unique")
+        if not self.active_player_objective_ids <= objective_id_set:
+            raise ValueError("active player objectives must reference configured objectives")
+        if not self.completed_player_objective_ids <= objective_id_set:
+            raise ValueError("completed player objectives must reference configured objectives")
+        if self.active_player_objective_ids & self.completed_player_objective_ids:
+            raise ValueError("player objectives cannot be both active and complete")
 
         for dialogue_rule in self.dialogue_relationship_rules:
             speaker = self.entities.get(dialogue_rule.speaker_id)
@@ -350,6 +393,32 @@ class WorldState(BaseModel):
                     raise ValueError(
                         "item turn-in rule goal must be a matching acquire_item goal"
                     )
+
+        for objective in self.player_objectives:
+            objective_fact_ids = (
+                objective.activation_required_fact_ids
+                | objective.completion_required_fact_ids
+            )
+            if objective_fact_ids - self.facts.keys():
+                raise ValueError("player objective references missing facts")
+            objective_item_ids = (
+                objective.activation_required_item_ids
+                | objective.completion_required_item_ids
+            )
+            if objective_item_ids - self.items.keys():
+                raise ValueError("player objective references missing items")
+            objective_turn_in_ids = (
+                objective.activation_required_turn_in_rule_ids
+                | objective.completion_required_turn_in_rule_ids
+            )
+            if objective_turn_in_ids - set(turn_in_rule_ids):
+                raise ValueError("player objective references missing turn-in rules")
+            objective_dependencies = (
+                objective.activation_required_completed_objective_ids
+                | objective.completion_required_completed_objective_ids
+            )
+            if objective_dependencies - objective_id_set:
+                raise ValueError("player objective references missing objective dependencies")
 
         for entity in self.entities.values():
             if not isinstance(entity, NPC):
