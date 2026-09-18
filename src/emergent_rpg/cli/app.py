@@ -73,6 +73,15 @@ def _render_state(state: WorldState) -> str:
         for destination in [location.exits[alias]]
     ]
     inventory = [state.items[item_id].name for item_id in player.state.inventory]
+    objective_by_id = {objective.id: objective for objective in state.player_objectives}
+    active_objectives = [
+        objective_by_id[objective_id].title
+        for objective_id in sorted(state.active_player_objective_ids)
+    ]
+    completed_objectives = [
+        objective_by_id[objective_id].title
+        for objective_id in sorted(state.completed_player_objective_ids)
+    ]
     return "\n".join(
         [
             f"Location: {location.name}",
@@ -82,6 +91,14 @@ def _render_state(state: WorldState) -> str:
             f"Exits: {', '.join(exits) if exits else 'none'}",
             f"Blocked routes: {', '.join(blocked) if blocked else 'none'}",
             f"Inventory: {', '.join(inventory) if inventory else 'empty'}",
+            (
+                "Active objectives: "
+                + (", ".join(active_objectives) if active_objectives else "none")
+            ),
+            (
+                "Completed objectives: "
+                + (", ".join(completed_objectives) if completed_objectives else "none")
+            ),
         ]
     )
 
