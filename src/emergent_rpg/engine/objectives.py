@@ -19,7 +19,11 @@ class PlayerObjectivePolicy:
         *,
         completed_ids: set[str] | None = None,
     ) -> bool:
-        completed = completed_ids if completed_ids is not None else state.completed_player_objective_ids
+        completed = (
+            completed_ids
+            if completed_ids is not None
+            else state.completed_player_objective_ids
+        )
         return (
             objective.activation_required_fact_ids <= state.player_known_facts
             and objective.activation_required_item_ids <= cls._player_item_ids(state)
@@ -36,7 +40,11 @@ class PlayerObjectivePolicy:
         *,
         completed_ids: set[str] | None = None,
     ) -> bool:
-        completed = completed_ids if completed_ids is not None else state.completed_player_objective_ids
+        completed = (
+            completed_ids
+            if completed_ids is not None
+            else state.completed_player_objective_ids
+        )
         return (
             objective.completion_required_fact_ids <= state.player_known_facts
             and objective.completion_required_item_ids <= cls._player_item_ids(state)
