@@ -17,6 +17,8 @@ from emergent_rpg.domain.events import (
     NPCLocationMapped,
     NPCMoved,
     PlayerMoved,
+    PlayerObjectiveActivated,
+    PlayerObjectiveCompleted,
     ScheduledLocationConditionApplied,
     ScheduledLocationConditionExpired,
     SimulationCycleProcessed,
@@ -24,6 +26,7 @@ from emergent_rpg.domain.events import (
 )
 from emergent_rpg.domain.models import NPC, LocationCondition, PlayerCharacter, WorldState
 from emergent_rpg.engine.environment import EnvironmentalRules
+from emergent_rpg.engine.objectives import PlayerObjectivePolicy
 from emergent_rpg.engine.social import SocialDisclosurePolicy
 from emergent_rpg.validation.models import ValidationReport
 
@@ -202,6 +205,24 @@ def validate_state(
             for event in transition_events or []
             if isinstance(event, NPCLocationMapped)
         }
+
+        expected_active_objectives = set(previous.active_player_objective_ids)
+        expected_completed_objectives = set(previous.completed_player_objective_ids)
+        for transition_event in transition_events or []:
+            if isinstance(transition_event, PlayerObjectiveActivated):
+                expected_active_objectives.add(transition_event.objective_id)
+            elif isinstance(transition_event, PlayerObjectiveCompleted):
+                expected_active_objectives.discard(transition_event.objective_id)
+                expected_completed_objectives.add(transition_event.objective_id)
+        if (
+            state.active_player_objective_ids != expected_active_objectives
+            or state.completed_player_objective_ids != expected_completed_objectives
+        ):
+            report.add_error(
+                "player_objective_changed_without_event",
+                "player objective state does not match lifecycle event provenance",
+            )
+
         for location_id, old_location in previous.locations.items():
             if location_id in state.locations:
                 removed_conditions = (
@@ -290,6 +311,14 @@ def validate_event_preconditions(state: WorldState, event: Event) -> ValidationR
         _validate_npc_fact_shared(state, event, report)
     elif isinstance(event, NPCGoalCompleted):
         _validate_npc_goal_completed(state, event, report)
+    elif isinstance(event, PlayerObjectiveActivated):
+        reason = PlayerObjectivePolicy.validate_activation_event(state, event)
+        if reason is not None:
+            report.add_error("invalid_player_objective", reason)
+    elif isinstance(event, PlayerObjectiveCompleted):
+        reason = PlayerObjectivePolicy.validate_completion_event(state, event)
+        if reason is not None:
+            report.add_error("invalid_player_objective", reason)
     elif isinstance(event, CharacterHealed):
         if event.entity_id not in state.entities:
             report.add_error("nonexistent_entity", f"missing heal target {event.entity_id}")
