@@ -323,6 +323,7 @@ class DeterministicResolver:
                 f"You strike {attack_target.name} for {damage} damage.",
                 f"You spend {CombatPolicy.UNARMED_STAMINA_COST} stamina.",
             ]
+            tags = {"combat", "attack"}
             if attack_target.state.health <= damage:
                 observations.append(f"{attack_target.name} collapses.")
             elif CombatPolicy.retaliation_eligible_after_player_damage(
@@ -358,6 +359,7 @@ class DeterministicResolver:
                         ),
                     ]
                 )
+                tags.add("retaliation")
                 observations.extend(
                     [
                         f"{attack_target.name} retaliates for {damage} damage.",
@@ -372,7 +374,7 @@ class DeterministicResolver:
                 emitted_events=events,
                 observations=observations,
                 involved_entities={player.id, attack_target.id},
-                tags={"combat", "attack"},
+                tags=tags,
             )
 
         if isinstance(action, TalkAction):
