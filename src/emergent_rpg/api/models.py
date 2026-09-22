@@ -55,6 +55,7 @@ class PlayerStateView(BaseModel):
     time: str
     health: int
     stamina: int
+    equipped_weapon: VisibleItem | None = None
     location_id: str
     location_name: str
     exits: dict[str, str]
@@ -187,6 +188,14 @@ def project_player_state(state: WorldState) -> PlayerStateView:
         time=state.clock.display(),
         health=player.state.health,
         stamina=player.state.stamina,
+        equipped_weapon=(
+            VisibleItem(
+                id=player.state.equipped_weapon_id,
+                name=state.items[player.state.equipped_weapon_id].name,
+            )
+            if player.state.equipped_weapon_id is not None
+            else None
+        ),
         location_id=location.id,
         location_name=location.name,
         exits=exits,
