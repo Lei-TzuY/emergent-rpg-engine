@@ -263,7 +263,7 @@ def validate_state(
             entity_id: entity.state.stamina
             for entity_id, entity in previous.entities.items()
         }
-        pending_attack_spends: Counter[tuple[int, str, str]] = Counter()
+        pending_attack_spends: dict[str, CharacterStaminaSpent] = {}
         combat_damage_turns: Counter[int] = Counter()
         combat_time_turns: Counter[int] = Counter()
         wait_recovery_keys: Counter[tuple[int, int]] = Counter()
@@ -277,14 +277,7 @@ def validate_state(
                         expected_stamina[transition_event.entity_id]
                         - transition_event.amount,
                     )
-                if transition_event.reason == "unarmed_attack":
-                    pending_attack_spends[
-                        (
-                            transition_event.turn_number,
-                            transition_event.entity_id,
-                            transition_event.target_id,
-                        )
-                    ] += 1
+                pending_attack_spends[transition_event.event_id] = transition_event
             elif isinstance(transition_event, CharacterStaminaRecovered):
                 if transition_event.entity_id in expected_stamina:
                     expected_stamina[transition_event.entity_id] = min(
@@ -298,20 +291,23 @@ def validate_state(
             elif (
                 isinstance(transition_event, CharacterDamaged)
                 and transition_event.cause == "unarmed_attack"
-                and transition_event.source_id is not None
+                and transition_event.stamina_spend_event_id is not None
             ):
-                key = (
-                    transition_event.turn_number,
-                    transition_event.source_id,
-                    transition_event.entity_id,
+                spend = pending_attack_spends.pop(
+                    transition_event.stamina_spend_event_id,
+                    None,
                 )
-                if pending_attack_spends[key] <= 0:
+                if (
+                    spend is None
+                    or transition_event.source_id != spend.entity_id
+                    or transition_event.entity_id != spend.target_id
+                    or transition_event.turn_number != spend.turn_number
+                    or transition_event.stamina_cost != spend.amount
+                ):
                     report.add_error(
                         "combat_damage_without_stamina_spend",
-                        "unarmed damage lacks a prior matching stamina spend",
+                        "unarmed damage lacks its exact prior stamina spend provenance",
                     )
-                else:
-                    pending_attack_spends[key] -= 1
                 combat_damage_turns[transition_event.turn_number] += 1
             elif isinstance(transition_event, TimeAdvanced):
                 if (
@@ -324,8 +320,7 @@ def validate_state(
                         (transition_event.turn_number, transition_event.minutes)
                     ] += 1
 
-        unmatched_spends = sum(pending_attack_spends.values())
-        if unmatched_spends:
+        if pending_attack_spends:
             report.add_error(
                 "combat_stamina_spend_without_damage",
                 "unarmed stamina spend lacks matching damage provenance",
