@@ -100,6 +100,14 @@ def _render_state(state: WorldState) -> str:
             f"Location: {location.name}",
             f"Time: {state.clock.display()} | Turn: {state.turn_number}",
             f"Health: {player.state.health}/10 | Stamina: {player.state.stamina}/10",
+            (
+                "Weapon: "
+                + (
+                    state.items[player.state.equipped_weapon_id].name
+                    if player.state.equipped_weapon_id is not None
+                    else "unarmed"
+                )
+            ),
             f"Visible: {', '.join(visible_items) if visible_items else 'nothing portable'}",
             f"NPCs: {', '.join(npcs) if npcs else 'none'}",
             f"Exits: {', '.join(exits) if exits else 'none'}",
@@ -290,7 +298,8 @@ def play(
         if text.casefold().strip() == "help":
             typer.echo(
                 "Commands: move <exit>, inspect <target>, talk <npc>, "
-                "take <item>, give <item> to <npc>, attack <npc>, wait [minutes]. "
+                "take <item>, give <item> to <npc>, equip <item>, unequip, "
+                "attack <npc>, wait [minutes]. "
                 "With an LLM action parser, "
                 "natural phrasing is allowed."
             )
