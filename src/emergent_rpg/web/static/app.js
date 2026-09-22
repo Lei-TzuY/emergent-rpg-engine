@@ -7,6 +7,7 @@ const ui = {
   loadSession: document.querySelector("#load-session"),
   location: document.querySelector("#location-name"),
   worldTime: document.querySelector("#world-time"),
+  vitals: document.querySelector("#player-vitals"),
   conditions: document.querySelector("#location-conditions"),
   exits: document.querySelector("#exits"),
   blockedExits: document.querySelector("#blocked-exits"),
@@ -129,6 +130,10 @@ function renderState(view) {
   ui.location.textContent = view.location_name;
   ui.worldTime.textContent = `${view.time} · Turn ${view.turn_number}`;
   ui.turnCounter.textContent = `Turn ${view.turn_number}`;
+  renderChips(ui.vitals, [
+    `Health ${view.health}/10`,
+    `Stamina ${view.stamina}/10`,
+  ]);
   renderConditions(view.location_conditions || []);
   renderChips(ui.exits, Object.entries(view.exits).map(([alias, name]) => `${alias} → ${name}`));
   renderChips(
