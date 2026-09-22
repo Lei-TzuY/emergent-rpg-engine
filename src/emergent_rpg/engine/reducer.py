@@ -263,23 +263,26 @@ def apply_event(state: WorldState, event: Event) -> WorldState:
         )
         if rule_error is not None:
             raise ReductionError(rule_error)
-        rule = ObjectiveOutcomeSchedulePolicy.rule_by_id(new_state, event.rule_id)
-        if rule is None:
+        schedule_rule = ObjectiveOutcomeSchedulePolicy.rule_by_id(
+            new_state,
+            event.rule_id,
+        )
+        if schedule_rule is None:
             raise ReductionError("objective outcome schedule rule no longer exists")
         new_state.scheduled_location_conditions.append(
             ScheduledLocationCondition(
                 id=event.scheduled_event_id,
                 due_absolute_minute=event.due_absolute_minute,
-                location_id=rule.location_id,
-                condition=rule.condition.model_copy(deep=True),
-                expires_after_minutes=rule.expires_after_minutes,
+                location_id=schedule_rule.location_id,
+                condition=schedule_rule.condition.model_copy(deep=True),
+                expires_after_minutes=schedule_rule.expires_after_minutes,
             )
         )
         new_state.scheduled_location_conditions.sort(
             key=lambda scheduled: (scheduled.due_absolute_minute, scheduled.id)
         )
         new_state.applied_objective_outcome_scheduled_condition_rule_ids.add(
-            rule.id
+            schedule_rule.id
         )
     elif isinstance(event, ScheduledLocationConditionApplied):
         activation_index = next(
