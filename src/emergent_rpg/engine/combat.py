@@ -92,6 +92,8 @@ class CombatPolicy:
         if event.cause == "other":
             if event.source_id is not None and event.source_id not in state.entities:
                 return f"damage source {event.source_id} does not exist"
+            if event.stamina_spend_event_id is not None or event.stamina_cost is not None:
+                return "non-unarmed damage cannot carry stamina provenance"
             return None
 
         if event.cause != "unarmed_attack":
@@ -113,6 +115,17 @@ class CombatPolicy:
             return "unarmed attack participants must be co-located"
         if event.amount != cls.UNARMED_DAMAGE:
             return f"unarmed attack damage must equal {cls.UNARMED_DAMAGE}"
-        if source.state.stamina > cls.MAX_STAMINA - cls.UNARMED_STAMINA_COST:
-            return "unarmed attack damage requires prior stamina spend provenance"
+
+        has_spend_id = event.stamina_spend_event_id is not None
+        has_stamina_cost = event.stamina_cost is not None
+        if has_spend_id != has_stamina_cost:
+            return "unarmed attack stamina provenance is incomplete"
+        if event.stamina_cost is not None:
+            if event.stamina_cost != cls.UNARMED_STAMINA_COST:
+                return (
+                    "unarmed attack stamina cost must equal "
+                    f"{cls.UNARMED_STAMINA_COST}"
+                )
+            if source.state.stamina > cls.MAX_STAMINA - event.stamina_cost:
+                return "unarmed attack damage requires prior stamina spend provenance"
         return None
