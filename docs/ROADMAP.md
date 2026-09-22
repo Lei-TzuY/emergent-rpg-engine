@@ -36,7 +36,8 @@ The project advances by coherent executable slices rather than placeholder subsy
 32. **Replayable player objective deadlines / failure lifecycle** — canonical absolute-minute deadlines, typed validated failure events, completion-before-failure precedence, active/completed/failed provenance, and CLI/API/browser projection. **Complete.**
 33. **Data-driven objective outcome consequences** — bind validated completion/failure outcomes to bounded replayable fact/relationship consequences through existing event authorities, deterministic priority, and one-shot outcome provenance. **Complete.**
 34. **Objective-triggered scheduled world consequences** — allow validated objective outcomes to enqueue bounded replayable environmental consequences into the existing canonical world-event timeline. **Complete.**
-35. **Deterministic player combat / damage provenance** — add a typed player attack action and provenance-rich validated damage authority across parser/resolver/reducer/API/browser paths without allowing prose to decide damage. **Next.**
+35. **Deterministic player combat / damage provenance** — add a typed player attack action and provenance-rich validated damage authority across parser/resolver/reducer/API/browser paths without allowing prose to decide damage. **Complete.**
+36. **Replayable combat stamina economy / rest recovery** — make canonical stamina an executable resource with typed spend/recovery provenance, attack affordability, player-visible resource projection, and deterministic rest recovery. **Next.**
 
 ## Milestone 3 invariant
 
@@ -701,3 +702,50 @@ player-visible local target
 ```
 
 The first combat slice should stay deliberately bounded: deterministic unarmed player attacks, local conscious NPC targets, explicit attacker provenance, fixed or data-driven bounded damage, ordinary transaction/provider-failure semantics, parser/API/browser parity, and forged/remote/dead-target rejection. It should reuse canonical health rather than introducing a second combat-state store.
+
+
+## Milestone 35 invariant
+
+Player combat now has one deliberately bounded deterministic authority path rather than free-form prose deciding injuries:
+
+```text
+player-visible local NPC
+→ AttackAction
+→ deterministic resolver legality
+→ CharacterDamaged(
+     source_id = canonical player,
+     entity_id = local active target,
+     cause = unarmed_attack,
+     amount = CombatPolicy.UNARMED_DAMAGE
+   )
+→ generic event validation
+→ reducer repeats combat provenance validation
+→ reducer-owned health / lethal alive+conscious transition
+→ TimeAdvanced
+→ narrative validation across the before/after participant transition
+→ atomic persistence / replay
+```
+
+The structured provider sees only the existing visible interaction surface and may propose `{"kind":"attack","target":"..."}`; it does not choose damage. Deterministic parsing accepts `attack`, `hit`, and `strike` aliases. The combat policy independently rejects missing/non-player sources, self/remote/inactive participants, and forged damage amounts. Legacy `CharacterDamaged` records without source/cause fields remain parseable as `cause="other"` for replay compatibility, while the new unarmed attack cause has strict player provenance.
+
+Transition validation reconstructs expected health from typed damage/healing events and independently reconstructs lethal `alive/conscious` state, so direct HP/death mutation without event provenance fails closed. Lethal narration also preserves the target as an involved entity: scene validation allows an inactive participant only when that participant was active in `state_before` and became inactive during the accepted typed transition. Already-inactive participants remain invalid.
+
+Focused coverage proves parser/provider attack proposals, fixed damage provenance, remote/inactive/incapacitated rejection, forged high-damage/remote/NPC-source rejection, direct health/life-state mutation rejection, legacy replay compatibility, five-hit lethal persistence/replay, raw HTTP/browser action parity, provider-failure zero commit, and lethal narration integration. The fully green implementation head `07d76ea56a4c985549241f03f910b2de21d6bd14` passed wheel/browser packaging, Ruff, strict mypy across 62 source files, **281 pytest tests**, the seeded 1,000-accepted-turn consistency evaluation (1,058 submissions, 1,000 accepted, `failures=[]`, `passed=true`) and verifier, plus the autonomy/custody/social integration evaluation and verifier.
+
+## Promotion gate for Milestone 36
+
+Milestone 35 establishes damage authority, but canonical `CharacterState.stamina` is still dormant and therefore combat has no resource/action-economy constraint. The next slice should make stamina executable before adding NPC retaliation or a larger combat AI surface:
+
+```text
+player-visible stamina
++ AttackAction
+→ affordability check
+→ typed stamina-spend event
+→ validated fixed unarmed damage event
+→ ordinary time advance
+→ deterministic rest/wait recovery through typed stamina-recovery event
+→ transition provenance validation
+→ persistence / replay
+```
+
+Stamina changes must never be direct resolver mutations. Spend/recovery events need exact actor, amount, and reason provenance; transition validation should reconstruct canonical stamina just as Milestone 35 reconstructs health. Attacks with insufficient stamina must reject with zero material events. Recovery must be bounded at the canonical maximum and tied to an explicit deterministic rest/wait rule rather than wall-clock time. Player-facing CLI/API/browser state should expose health/stamina once those values affect legal action choice. Weapons, armor, NPC retaliation, initiative, and combat AI remain later promotions rather than being mixed into this resource-authority milestone.

@@ -3,6 +3,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from emergent_rpg.domain.actions import (
+    AttackAction,
     FreeformAction,
     GiveAction,
     InspectAction,
@@ -13,6 +14,7 @@ from emergent_rpg.domain.actions import (
     WaitAction,
 )
 from emergent_rpg.domain.events import (
+    CharacterDamaged,
     Event,
     FactDiscovered,
     ItemAcquired,
@@ -23,6 +25,7 @@ from emergent_rpg.domain.events import (
     TimeAdvanced,
 )
 from emergent_rpg.domain.models import NPC, Fact, Item, WorldState
+from emergent_rpg.engine.combat import CombatPolicy
 from emergent_rpg.engine.dialogue import DialogueRelationshipPolicy
 from emergent_rpg.engine.environment import EnvironmentalRules
 from emergent_rpg.engine.mystery import MysteryGraph
@@ -266,6 +269,50 @@ class DeterministicResolver:
                 tags={"inspection"},
             )
 
+        if isinstance(action, AttackAction):
+            if incapacitated:
+                return ActionResult(
+                    accepted=False,
+                    reason="You cannot attack while incapacitated.",
+                )
+            attack_target = self._find_npc(state, action.target, location_id)
+            if attack_target is None:
+                return ActionResult(
+                    accepted=False,
+                    reason="That person is not here to attack.",
+                )
+            if not attack_target.state.alive or not attack_target.state.conscious:
+                return ActionResult(
+                    accepted=False,
+                    reason="They cannot be attacked in that state.",
+                )
+            damage = CombatPolicy.UNARMED_DAMAGE
+            events: list[Event] = [
+                CharacterDamaged(
+                    turn_number=turn,
+                    entity_id=attack_target.id,
+                    amount=damage,
+                    source_id=player.id,
+                    cause="unarmed_attack",
+                ),
+                TimeAdvanced(
+                    turn_number=turn,
+                    minutes=CombatPolicy.UNARMED_MINUTES,
+                ),
+            ]
+            observations = [
+                f"You strike {attack_target.name} for {damage} damage."
+            ]
+            if attack_target.state.health <= damage:
+                observations.append(f"{attack_target.name} collapses.")
+            return ActionResult(
+                accepted=True,
+                emitted_events=events,
+                observations=observations,
+                involved_entities={player.id, attack_target.id},
+                tags={"combat", "attack"},
+            )
+
         if isinstance(action, TalkAction):
             npc = self._find_npc(state, action.target, location_id)
             if npc is None:
@@ -332,7 +379,7 @@ class DeterministicResolver:
                 accepted=False,
                 reason=(
                     "Freeform language is preserved for a pluggable parser; use move, inspect, "
-                    "talk, take, give, or wait in the deterministic demo."
+                    "talk, take, give, attack, or wait in the deterministic demo."
                 ),
             )
         return ActionResult(accepted=False, reason="Unsupported action.")

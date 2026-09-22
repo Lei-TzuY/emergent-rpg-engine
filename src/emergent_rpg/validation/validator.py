@@ -5,6 +5,7 @@ from collections.abc import Iterable
 from typing import Literal
 
 from emergent_rpg.domain.events import (
+    CharacterDamaged,
     CharacterHealed,
     Event,
     FactDiscovered,
@@ -27,6 +28,7 @@ from emergent_rpg.domain.events import (
     TimeAdvanced,
 )
 from emergent_rpg.domain.models import NPC, LocationCondition, PlayerCharacter, WorldState
+from emergent_rpg.engine.combat import CombatPolicy
 from emergent_rpg.engine.environment import EnvironmentalRules
 from emergent_rpg.engine.objective_schedules import ObjectiveOutcomeSchedulePolicy
 from emergent_rpg.engine.objectives import PlayerObjectivePolicy
@@ -193,6 +195,67 @@ def validate_state(
             report.add_error("turn_went_backward", "turn number decreased")
         if state.clock.absolute_minutes < previous.clock.absolute_minutes:
             report.add_error("time_went_backward", "world time decreased")
+
+        expected_health = {
+            entity_id: entity.state.health
+            for entity_id, entity in previous.entities.items()
+        }
+        expected_alive = {
+            entity_id: entity.state.alive
+            for entity_id, entity in previous.entities.items()
+        }
+        expected_conscious = {
+            entity_id: entity.state.conscious
+            for entity_id, entity in previous.entities.items()
+        }
+        for transition_event in transition_events or []:
+            if isinstance(transition_event, CharacterDamaged):
+                if transition_event.entity_id in expected_health:
+                    entity_id = transition_event.entity_id
+                    expected_health[entity_id] = max(
+                        0,
+                        expected_health[entity_id] - transition_event.amount,
+                    )
+                    if expected_health[entity_id] == 0:
+                        expected_alive[entity_id] = False
+                        expected_conscious[entity_id] = False
+            elif (
+                isinstance(transition_event, CharacterHealed)
+                and transition_event.entity_id in expected_health
+            ):
+                expected_health[transition_event.entity_id] = min(
+                    10,
+                    expected_health[transition_event.entity_id]
+                    + transition_event.amount,
+                )
+        mismatched_health = [
+            entity_id
+            for entity_id, health in expected_health.items()
+            if entity_id in state.entities
+            and state.entities[entity_id].state.health != health
+        ]
+        if mismatched_health:
+            report.add_error(
+                "character_health_changed_without_event",
+                "character health does not match damage/healing event provenance: "
+                f"{sorted(mismatched_health)}",
+            )
+        mismatched_life_state = [
+            entity_id
+            for entity_id in expected_alive
+            if entity_id in state.entities
+            and (
+                state.entities[entity_id].state.alive != expected_alive[entity_id]
+                or state.entities[entity_id].state.conscious
+                != expected_conscious[entity_id]
+            )
+        ]
+        if mismatched_life_state:
+            report.add_error(
+                "character_life_state_changed_without_event",
+                "character alive/conscious state does not match damage event provenance: "
+                f"{sorted(mismatched_life_state)}",
+            )
         if (
             state.simulation.next_due_absolute_minute
             < previous.simulation.next_due_absolute_minute
@@ -397,6 +460,10 @@ def validate_event_preconditions(state: WorldState, event: Event) -> ValidationR
         reason = PlayerObjectivePolicy.validate_failure_event(state, event)
         if reason is not None:
             report.add_error("invalid_player_objective", reason)
+    elif isinstance(event, CharacterDamaged):
+        reason = CombatPolicy.validate_damage_event(state, event)
+        if reason is not None:
+            report.add_error("invalid_character_damage", reason)
     elif isinstance(event, CharacterHealed):
         if event.entity_id not in state.entities:
             report.add_error("nonexistent_entity", f"missing heal target {event.entity_id}")
@@ -1075,9 +1142,14 @@ def _validate_inference_event(
 
 
 def validate_scene_participation(
-    state: WorldState, participants: list[str], fact_reveals: dict[str, list[str]]
+    state: WorldState,
+    participants: list[str],
+    fact_reveals: dict[str, list[str]],
+    *,
+    allow_inactive_participants: set[str] | None = None,
 ) -> ValidationReport:
     report = ValidationReport()
+    allowed_inactive = allow_inactive_participants or set()
     player_location = state.player().state.current_location
     for entity_id in participants:
         if entity_id not in state.entities:
@@ -1089,7 +1161,10 @@ def validate_scene_participation(
                 "impossible_character_location",
                 f"{entity_id} cannot participate from {entity.state.current_location}",
             )
-        if not entity.state.alive or not entity.state.conscious:
+        if (
+            (not entity.state.alive or not entity.state.conscious)
+            and entity_id not in allowed_inactive
+        ):
             report.add_error("inactive_participant", f"{entity_id} cannot participate in scene")
 
     for entity_id, fact_ids in fact_reveals.items():

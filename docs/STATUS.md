@@ -4,36 +4,37 @@ This file is the compact current-phase status. Historical milestone invariants a
 
 ## Current checkpoint
 
-- Milestones 1–34: **Complete**.
-- Milestone 35 — **Deterministic player combat / damage provenance**: **Next**.
+- Milestones 1–35: **Complete**.
+- Milestone 36 — **Replayable combat stamina economy / rest recovery**: **Next**.
 
-## Milestone 34 authority boundary
+## Milestone 35 authority boundary
 
-Objective terminal outcomes can now schedule future environmental changes without creating a second environmental mutation path:
+Player combat now has one executable deterministic vertical slice:
 
 ```text
-PlayerObjectiveCompleted / PlayerObjectiveFailed
-→ deterministic highest-priority schedule rule
-→ ScheduledLocationConditionQueued
-→ canonical pending schedule
-→ existing world-event scheduler at due minute
-→ ScheduledLocationConditionApplied
-→ existing expiry / traversal / route rules
-→ persistence / replay
+visible local NPC target
+→ AttackAction
+→ deterministic resolver
+→ provenance-rich CharacterDamaged
+→ generic validator + reducer revalidation
+→ canonical health / lethal life-state transition
+→ TimeAdvanced
+→ narration
+→ atomic persistence / replay
 ```
 
-The queue event carries exact objective, outcome, rule, scheduled-event id, and due-minute provenance. Validation rejects forged terminal provenance, wrong due times, duplicate pending ids, missing locations, invalid route targets, active/pending target conflicts, and lower-priority sibling rules after an outcome has been consumed.
+For `cause="unarmed_attack"`, the damage source must be the canonical player, source/target must be distinct active co-located entities, and the amount must equal `CombatPolicy.UNARMED_DAMAGE`. The provider/parser can propose the target but cannot choose damage.
 
-Transition validation also protects the pending queue itself: a schedule cannot appear without a typed queue event, an existing pending schedule cannot be silently rewritten in place, and the canonical applied schedule-rule set must match queue-event provenance.
+Health and lethal `alive/conscious` transitions are checked again at whole-transition validation time. Direct state mutation without matching damage/healing event provenance fails closed. Lethal narration keeps the struck target in event/scene evidence while allowing inactivity only when the entity was active before the turn and became inactive during that accepted transition; stale inactive participants remain rejected.
 
-Objective policy never directly activates a location condition. Activation and expiry remain owned by the existing deterministic scheduler and environmental reducer. Pending scheduled consequences remain hidden from player-visible API/browser state until they actually become active.
+The implementation preserves the pre-existing serialized `CharacterDamaged` shape by defaulting absent provenance to `source_id=None` and `cause="other"`, so old replay data remains readable while the new player-combat path is strictly validated.
 
-Provider failure still occurs before persistence, so queued consequences, objective events, canonical state, event log, and turn history remain unchanged on narration failure. The fully green implementation head `c397483943d05b871cb9bac27a413b85312e87c3` passed wheel/browser packaging, Ruff, strict mypy, full pytest, the seeded 1,000-turn consistency evaluation and verifier, and the autonomy integration evaluation and verifier.
+The fully green implementation head `07d76ea56a4c985549241f03f910b2de21d6bd14` passed wheel/browser packaging, Ruff, strict mypy, **281 pytest tests**, the seeded 1,000-turn consistency evaluation and verifier (1,058 submissions / 1,000 accepted / `failures=[]`), and the autonomy/custody/social integration evaluation and verifier.
 
-## Next frontier: Milestone 35
+## Next frontier: Milestone 36
 
-The objective subsystem now spans replayable activation, completion/failure, immediate fact/relationship outcomes, and delayed scheduled-world effects. The next high-value architectural gap is combat.
+Combat damage exists, but stamina is still canonical data with no executable authority. Milestone 36 should make it a replayable action-economy resource before expanding combat AI.
 
-The engine already models health, stamina, alive/conscious state, and `CharacterDamaged`, but players have no typed attack action and existing damage lacks attacker provenance. Milestone 35 should add a bounded deterministic player-combat vertical slice: local-target `AttackAction`, provenance-rich validated damage, reducer-owned health/death transitions, parser/provider/API/browser parity, persistence/replay, and provider-failure zero-commit behavior.
+An unarmed attack should require sufficient canonical stamina and emit a typed stamina-spend event before damage. Explicit rest/wait should recover stamina through a typed bounded recovery event. Validator/reducer/transition provenance must reject forged amounts, overspend, over-recovery, direct stamina mutation, and wrong actor/reason combinations. Provider failure must keep both stamina and damage zero-commit.
 
-This should not become a placeholder “combat system.” The acceptance boundary is one executable, deterministic unarmed attack path with explicit legality and damage authority; richer weapons, armor, NPC retaliation, initiative, and combat AI can be promoted only after that base path is proven.
+Because stamina will affect action legality, player-facing CLI/API/browser state should expose health and stamina. NPC retaliation, initiative, weapons/armor, and combat AI should remain outside this phase and be promoted only after the resource authority is proven.

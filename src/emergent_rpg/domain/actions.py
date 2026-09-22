@@ -35,6 +35,11 @@ class GiveAction(ActionModel):
     receiver: str = Field(min_length=1)
 
 
+class AttackAction(ActionModel):
+    kind: Literal["attack"] = "attack"
+    target: str = Field(min_length=1)
+
+
 class WaitAction(ActionModel):
     kind: Literal["wait"] = "wait"
     minutes: int = Field(default=10, ge=1, le=24 * 60)
@@ -46,7 +51,14 @@ class FreeformAction(ActionModel):
 
 
 PlayerAction = Annotated[
-    MoveAction | InspectAction | TalkAction | TakeAction | GiveAction | WaitAction | FreeformAction,
+    MoveAction
+    | InspectAction
+    | TalkAction
+    | TakeAction
+    | GiveAction
+    | AttackAction
+    | WaitAction
+    | FreeformAction,
     Field(discriminator="kind"),
 ]
 
