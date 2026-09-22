@@ -200,14 +200,25 @@ def validate_state(
             entity_id: entity.state.health
             for entity_id, entity in previous.entities.items()
         }
+        expected_alive = {
+            entity_id: entity.state.alive
+            for entity_id, entity in previous.entities.items()
+        }
+        expected_conscious = {
+            entity_id: entity.state.conscious
+            for entity_id, entity in previous.entities.items()
+        }
         for transition_event in transition_events or []:
             if isinstance(transition_event, CharacterDamaged):
                 if transition_event.entity_id in expected_health:
-                    expected_health[transition_event.entity_id] = max(
+                    entity_id = transition_event.entity_id
+                    expected_health[entity_id] = max(
                         0,
-                        expected_health[transition_event.entity_id]
-                        - transition_event.amount,
+                        expected_health[entity_id] - transition_event.amount,
                     )
+                    if expected_health[entity_id] == 0:
+                        expected_alive[entity_id] = False
+                        expected_conscious[entity_id] = False
             elif isinstance(transition_event, CharacterHealed):
                 if transition_event.entity_id in expected_health:
                     expected_health[transition_event.entity_id] = min(
@@ -226,6 +237,22 @@ def validate_state(
                 "character_health_changed_without_event",
                 "character health does not match damage/healing event provenance: "
                 f"{sorted(mismatched_health)}",
+            )
+        mismatched_life_state = [
+            entity_id
+            for entity_id in expected_alive
+            if entity_id in state.entities
+            and (
+                state.entities[entity_id].state.alive != expected_alive[entity_id]
+                or state.entities[entity_id].state.conscious
+                != expected_conscious[entity_id]
+            )
+        ]
+        if mismatched_life_state:
+            report.add_error(
+                "character_life_state_changed_without_event",
+                "character alive/conscious state does not match damage event provenance: "
+                f"{sorted(mismatched_life_state)}",
             )
         if (
             state.simulation.next_due_absolute_minute
