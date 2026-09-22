@@ -169,6 +169,23 @@ def test_forged_unarmed_damage_is_rejected_by_validator_and_reducer() -> None:
     with pytest.raises(ReductionError, match="co-located"):
         apply_event(state, forged_remote)
 
+    state = build_demo_world()
+    dax = state.entities["npc_dax"]
+    assert isinstance(dax, NPC)
+    dax.state.current_location = "yard"
+    forged_npc_source = CharacterDamaged(
+        turn_number=1,
+        entity_id="npc_lio",
+        source_id="npc_dax",
+        cause="unarmed_attack",
+        amount=CombatPolicy.UNARMED_DAMAGE,
+    )
+    source_report = validate_event_preconditions(state, forged_npc_source)
+    assert not source_report.valid
+    assert "canonical player" in str(source_report.issues)
+    with pytest.raises(ReductionError, match="canonical player"):
+        apply_event(state, forged_npc_source)
+
 
 def test_direct_health_mutation_requires_damage_or_healing_event() -> None:
     before = build_demo_world()
@@ -179,6 +196,21 @@ def test_direct_health_mutation_requires_damage_or_healing_event() -> None:
 
     assert not report.valid
     assert "character health does not match damage/healing event provenance" in str(
+        report.issues
+    )
+
+
+def test_direct_life_state_mutation_requires_lethal_damage_provenance() -> None:
+    before = build_demo_world()
+    after = before.model_copy(deep=True)
+    lio = _lio(after)
+    lio.state.alive = False
+    lio.state.conscious = False
+
+    report = validate_state(after, previous=before, transition_events=[])
+
+    assert not report.valid
+    assert "alive/conscious state does not match damage event provenance" in str(
         report.issues
     )
 
