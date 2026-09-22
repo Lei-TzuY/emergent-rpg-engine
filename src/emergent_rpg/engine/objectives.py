@@ -93,7 +93,11 @@ class PlayerObjectivePolicy:
             # Completion deliberately precedes deadline failure. If the same canonical
             # state satisfies both outcomes, earned completion wins deterministically.
             for objective in objectives:
-                if objective.id not in active or objective.id in completed or objective.id in failed:
+                if (
+                    objective.id not in active
+                    or objective.id in completed
+                    or objective.id in failed
+                ):
                     continue
                 if not cls.completion_ready(state, objective, completed_ids=completed):
                     continue
