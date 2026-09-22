@@ -5,6 +5,7 @@ from collections.abc import Iterable
 from typing import Literal
 
 from emergent_rpg.domain.events import (
+    CharacterDamaged,
     CharacterHealed,
     Event,
     FactDiscovered,
@@ -27,6 +28,7 @@ from emergent_rpg.domain.events import (
     TimeAdvanced,
 )
 from emergent_rpg.domain.models import NPC, LocationCondition, PlayerCharacter, WorldState
+from emergent_rpg.engine.combat import CombatPolicy
 from emergent_rpg.engine.environment import EnvironmentalRules
 from emergent_rpg.engine.objective_schedules import ObjectiveOutcomeSchedulePolicy
 from emergent_rpg.engine.objectives import PlayerObjectivePolicy
@@ -193,6 +195,38 @@ def validate_state(
             report.add_error("turn_went_backward", "turn number decreased")
         if state.clock.absolute_minutes < previous.clock.absolute_minutes:
             report.add_error("time_went_backward", "world time decreased")
+
+        expected_health = {
+            entity_id: entity.state.health
+            for entity_id, entity in previous.entities.items()
+        }
+        for transition_event in transition_events or []:
+            if isinstance(transition_event, CharacterDamaged):
+                if transition_event.entity_id in expected_health:
+                    expected_health[transition_event.entity_id] = max(
+                        0,
+                        expected_health[transition_event.entity_id]
+                        - transition_event.amount,
+                    )
+            elif isinstance(transition_event, CharacterHealed):
+                if transition_event.entity_id in expected_health:
+                    expected_health[transition_event.entity_id] = min(
+                        10,
+                        expected_health[transition_event.entity_id]
+                        + transition_event.amount,
+                    )
+        mismatched_health = [
+            entity_id
+            for entity_id, health in expected_health.items()
+            if entity_id in state.entities
+            and state.entities[entity_id].state.health != health
+        ]
+        if mismatched_health:
+            report.add_error(
+                "character_health_changed_without_event",
+                "character health does not match damage/healing event provenance: "
+                f"{sorted(mismatched_health)}",
+            )
         if (
             state.simulation.next_due_absolute_minute
             < previous.simulation.next_due_absolute_minute
@@ -397,6 +431,10 @@ def validate_event_preconditions(state: WorldState, event: Event) -> ValidationR
         reason = PlayerObjectivePolicy.validate_failure_event(state, event)
         if reason is not None:
             report.add_error("invalid_player_objective", reason)
+    elif isinstance(event, CharacterDamaged):
+        reason = CombatPolicy.validate_damage_event(state, event)
+        if reason is not None:
+            report.add_error("invalid_character_damage", reason)
     elif isinstance(event, CharacterHealed):
         if event.entity_id not in state.entities:
             report.add_error("nonexistent_entity", f"missing heal target {event.entity_id}")
