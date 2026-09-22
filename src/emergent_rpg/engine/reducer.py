@@ -19,6 +19,7 @@ from emergent_rpg.domain.events import (
     PlayerMoved,
     PlayerObjectiveActivated,
     PlayerObjectiveCompleted,
+    PlayerObjectiveFailed,
     RelationshipChanged,
     ScheduledLocationConditionApplied,
     ScheduledLocationConditionExpired,
@@ -146,12 +147,23 @@ def apply_event(state: WorldState, event: Event) -> WorldState:
             raise ReductionError("PlayerObjectiveActivated target is already active")
         if event.objective_id in new_state.completed_player_objective_ids:
             raise ReductionError("PlayerObjectiveActivated target is already complete")
+        if event.objective_id in new_state.failed_player_objective_ids:
+            raise ReductionError("PlayerObjectiveActivated target has already failed")
         new_state.active_player_objective_ids.add(event.objective_id)
     elif isinstance(event, PlayerObjectiveCompleted):
         if event.objective_id not in new_state.active_player_objective_ids:
             raise ReductionError("PlayerObjectiveCompleted target is not active")
+        if event.objective_id in new_state.failed_player_objective_ids:
+            raise ReductionError("PlayerObjectiveCompleted target has already failed")
         new_state.active_player_objective_ids.remove(event.objective_id)
         new_state.completed_player_objective_ids.add(event.objective_id)
+    elif isinstance(event, PlayerObjectiveFailed):
+        if event.objective_id in new_state.completed_player_objective_ids:
+            raise ReductionError("PlayerObjectiveFailed target is already complete")
+        if event.objective_id in new_state.failed_player_objective_ids:
+            raise ReductionError("PlayerObjectiveFailed target has already failed")
+        new_state.active_player_objective_ids.discard(event.objective_id)
+        new_state.failed_player_objective_ids.add(event.objective_id)
     elif isinstance(event, ItemAcquired):
         item = new_state.items[event.item_id]
         if item.owner_id is not None and item.owner_id in new_state.entities:

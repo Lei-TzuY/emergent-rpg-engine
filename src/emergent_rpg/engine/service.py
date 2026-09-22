@@ -9,6 +9,7 @@ from emergent_rpg.domain.events import (
     NPCFactShared,
     PlayerObjectiveActivated,
     PlayerObjectiveCompleted,
+    PlayerObjectiveFailed,
     ScheduledLocationConditionApplied,
     ScheduledLocationConditionExpired,
     SimulationCycleProcessed,
@@ -137,6 +138,8 @@ class GameEngine:
                     observations.append(f"Objective started: {title}")
                 elif isinstance(event, PlayerObjectiveCompleted):
                     observations.append(f"Objective completed: {title}")
+                elif isinstance(event, PlayerObjectiveFailed):
+                    observations.append(f"Objective failed: {title}")
             result = result.model_copy(
                 update={
                     "emitted_events": player_events,

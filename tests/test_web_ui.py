@@ -34,12 +34,15 @@ def test_ui_shell_and_assets_are_served_without_hidden_world_data(tmp_path: Path
     assert 'id="history-log"' in page.text
     assert 'id="active-objectives"' in page.text
     assert 'id="completed-objectives"' in page.text
+    assert 'id="failed-objectives"' in page.text
     assert 'role="alert"' in page.text
     assert "/sessions/" in script.text
     assert "setBusy" in script.text
     assert "showError" in script.text
     assert "view.active_objectives" in script.text
     assert "view.completed_objectives" in script.text
+    assert "view.failed_objectives" in script.text
+    assert "objective.deadline" in script.text
     assert "02:13" not in page.text + script.text
     assert "fact_blackout_window" not in page.text + script.text
 

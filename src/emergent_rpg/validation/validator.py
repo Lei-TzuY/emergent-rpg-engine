@@ -19,6 +19,7 @@ from emergent_rpg.domain.events import (
     PlayerMoved,
     PlayerObjectiveActivated,
     PlayerObjectiveCompleted,
+    PlayerObjectiveFailed,
     ScheduledLocationConditionApplied,
     ScheduledLocationConditionExpired,
     SimulationCycleProcessed,
@@ -208,15 +209,20 @@ def validate_state(
 
         expected_active_objectives = set(previous.active_player_objective_ids)
         expected_completed_objectives = set(previous.completed_player_objective_ids)
+        expected_failed_objectives = set(previous.failed_player_objective_ids)
         for transition_event in transition_events or []:
             if isinstance(transition_event, PlayerObjectiveActivated):
                 expected_active_objectives.add(transition_event.objective_id)
             elif isinstance(transition_event, PlayerObjectiveCompleted):
                 expected_active_objectives.discard(transition_event.objective_id)
                 expected_completed_objectives.add(transition_event.objective_id)
+            elif isinstance(transition_event, PlayerObjectiveFailed):
+                expected_active_objectives.discard(transition_event.objective_id)
+                expected_failed_objectives.add(transition_event.objective_id)
         if (
             state.active_player_objective_ids != expected_active_objectives
             or state.completed_player_objective_ids != expected_completed_objectives
+            or state.failed_player_objective_ids != expected_failed_objectives
         ):
             report.add_error(
                 "player_objective_changed_without_event",
@@ -317,6 +323,10 @@ def validate_event_preconditions(state: WorldState, event: Event) -> ValidationR
             report.add_error("invalid_player_objective", reason)
     elif isinstance(event, PlayerObjectiveCompleted):
         reason = PlayerObjectivePolicy.validate_completion_event(state, event)
+        if reason is not None:
+            report.add_error("invalid_player_objective", reason)
+    elif isinstance(event, PlayerObjectiveFailed):
+        reason = PlayerObjectivePolicy.validate_failure_event(state, event)
         if reason is not None:
             report.add_error("invalid_player_objective", reason)
     elif isinstance(event, CharacterHealed):
