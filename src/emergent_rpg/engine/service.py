@@ -231,7 +231,7 @@ class GameEngine:
             raise TransitionRejected(str(state_report.issues))
 
         plan = self.planner.plan(before, candidate, action, result)
-        scene_report = self.planner.validate(candidate, plan)
+        scene_report = self.planner.validate(before, candidate, plan)
         if not scene_report.valid:
             raise TransitionRejected(str(scene_report.issues))
 
