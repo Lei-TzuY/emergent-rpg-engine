@@ -133,6 +133,7 @@ function renderState(view) {
   renderChips(ui.vitals, [
     `Health ${view.health}/10`,
     `Stamina ${view.stamina}/10`,
+    `Weapon ${view.equipped_weapon ? view.equipped_weapon.name : "unarmed"}`,
   ]);
   renderConditions(view.location_conditions || []);
   renderChips(ui.exits, Object.entries(view.exits).map(([alias, name]) => `${alias} → ${name}`));

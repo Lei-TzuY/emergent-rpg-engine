@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from emergent_rpg.domain.actions import (
     AttackAction,
+    EquipAction,
     FreeformAction,
     GiveAction,
     InspectAction,
@@ -25,6 +28,7 @@ from emergent_rpg.domain.events import (
     PlayerMoved,
     RelationshipChanged,
     TimeAdvanced,
+    WeaponEquipmentChanged,
 )
 from emergent_rpg.domain.models import NPC, Fact, Item, WorldState
 from emergent_rpg.engine.combat import CombatPolicy
@@ -136,6 +140,11 @@ class DeterministicResolver:
             item = self._find_owned_item(state, action.item, player.id)
             if item is None:
                 return ActionResult(accepted=False, reason="You do not have that item to give.")
+            if item.id == player.state.equipped_weapon_id:
+                return ActionResult(
+                    accepted=False,
+                    reason="Unequip that weapon before giving it away.",
+                )
             if "portable" not in item.flags:
                 return ActionResult(accepted=False, reason="That item cannot be handed over.")
             receiver = self._find_npc(state, action.receiver, location_id)
@@ -271,6 +280,68 @@ class DeterministicResolver:
                 tags={"inspection"},
             )
 
+        if isinstance(action, EquipAction):
+            if incapacitated:
+                return ActionResult(
+                    accepted=False,
+                    reason="You cannot change equipment while incapacitated.",
+                )
+            current_weapon_id = player.state.equipped_weapon_id
+            if action.item is None:
+                if current_weapon_id is None:
+                    return ActionResult(
+                        accepted=False,
+                        reason="No weapon is currently equipped.",
+                    )
+                current_weapon = state.items[current_weapon_id]
+                return ActionResult(
+                    accepted=True,
+                    emitted_events=[
+                        WeaponEquipmentChanged(
+                            turn_number=turn,
+                            entity_id=player.id,
+                            from_item_id=current_weapon_id,
+                            to_item_id=None,
+                        ),
+                        TimeAdvanced(turn_number=turn, minutes=1),
+                    ],
+                    observations=[f"You unequip {current_weapon.name}."],
+                    involved_entities={player.id},
+                    tags={"equipment"},
+                )
+
+            weapon = self._find_owned_item(state, action.item, player.id)
+            if weapon is None:
+                return ActionResult(
+                    accepted=False,
+                    reason="You do not own that weapon.",
+                )
+            if weapon.weapon is None:
+                return ActionResult(
+                    accepted=False,
+                    reason="That item cannot be equipped as a weapon.",
+                )
+            if weapon.id == current_weapon_id:
+                return ActionResult(
+                    accepted=False,
+                    reason=f"{weapon.name} is already equipped.",
+                )
+            return ActionResult(
+                accepted=True,
+                emitted_events=[
+                    WeaponEquipmentChanged(
+                        turn_number=turn,
+                        entity_id=player.id,
+                        from_item_id=current_weapon_id,
+                        to_item_id=weapon.id,
+                    ),
+                    TimeAdvanced(turn_number=turn, minutes=1),
+                ],
+                observations=[f"You equip {weapon.name}."],
+                involved_entities={player.id},
+                tags={"equipment"},
+            )
+
         if isinstance(action, AttackAction):
             if incapacitated:
                 return ActionResult(
@@ -288,27 +359,41 @@ class DeterministicResolver:
                     accepted=False,
                     reason="They cannot be attacked in that state.",
                 )
-            if player.state.stamina < CombatPolicy.UNARMED_STAMINA_COST:
+
+            player_profile = CombatPolicy.attack_profile(state, player.id)
+            if player_profile is None:
+                return ActionResult(
+                    accepted=False,
+                    reason="Your equipped weapon state is invalid.",
+                )
+            if player.state.stamina < player_profile.stamina_cost:
                 return ActionResult(
                     accepted=False,
                     reason="You do not have enough stamina to attack.",
                 )
-            damage = CombatPolicy.UNARMED_DAMAGE
+
+            player_reason: Literal["unarmed_attack", "weapon_attack"] = (
+                "weapon_attack"
+                if player_profile.weapon_id is not None
+                else "unarmed_attack"
+            )
             spend_event = CharacterStaminaSpent(
                 turn_number=turn,
                 entity_id=player.id,
-                amount=CombatPolicy.UNARMED_STAMINA_COST,
-                reason="unarmed_attack",
+                amount=player_profile.stamina_cost,
+                reason=player_reason,
                 target_id=attack_target.id,
+                weapon_id=player_profile.weapon_id,
             )
             player_damage_event = CharacterDamaged(
                 turn_number=turn,
                 entity_id=attack_target.id,
-                amount=damage,
+                amount=player_profile.damage,
                 source_id=player.id,
-                cause="unarmed_attack",
+                cause=player_profile.cause,
                 stamina_spend_event_id=spend_event.event_id,
-                stamina_cost=CombatPolicy.UNARMED_STAMINA_COST,
+                stamina_cost=player_profile.stamina_cost,
+                weapon_id=player_profile.weapon_id,
             )
             events: list[Event] = [
                 spend_event,
@@ -319,25 +404,48 @@ class DeterministicResolver:
                     cause="combat",
                 ),
             ]
+            weapon_name = (
+                state.items[player_profile.weapon_id].name
+                if player_profile.weapon_id is not None
+                else None
+            )
+            strike = (
+                f"You strike {attack_target.name} with {weapon_name} "
+                f"for {player_profile.damage} damage."
+                if weapon_name is not None
+                else (
+                    f"You strike {attack_target.name} "
+                    f"for {player_profile.damage} damage."
+                )
+            )
             observations = [
-                f"You strike {attack_target.name} for {damage} damage.",
-                f"You spend {CombatPolicy.UNARMED_STAMINA_COST} stamina.",
+                strike,
+                f"You spend {player_profile.stamina_cost} stamina.",
             ]
             tags = {"combat", "attack"}
-            if attack_target.state.health <= damage:
+            if player_profile.weapon_id is not None:
+                tags.add("weapon")
+            if attack_target.state.health <= player_profile.damage:
                 observations.append(f"{attack_target.name} collapses.")
             elif CombatPolicy.retaliation_eligible_after_player_damage(
                 state,
                 attack_target.id,
-                damage,
+                player_profile.damage,
             ):
+                npc_profile = CombatPolicy.attack_profile(state, attack_target.id)
+                if npc_profile is None:
+                    return ActionResult(
+                        accepted=False,
+                        reason="Opponent weapon state is invalid.",
+                    )
                 retaliation_spend = CharacterStaminaSpent(
                     turn_number=turn,
                     entity_id=attack_target.id,
-                    amount=CombatPolicy.UNARMED_STAMINA_COST,
+                    amount=npc_profile.stamina_cost,
                     reason="retaliation",
                     target_id=player.id,
                     trigger_damage_event_id=player_damage_event.event_id,
+                    weapon_id=npc_profile.weapon_id,
                 )
                 events.extend(
                     [
@@ -345,12 +453,13 @@ class DeterministicResolver:
                         CharacterDamaged(
                             turn_number=turn,
                             entity_id=player.id,
-                            amount=damage,
+                            amount=npc_profile.damage,
                             source_id=attack_target.id,
-                            cause="unarmed_attack",
+                            cause=npc_profile.cause,
                             stamina_spend_event_id=retaliation_spend.event_id,
-                            stamina_cost=CombatPolicy.UNARMED_STAMINA_COST,
+                            stamina_cost=npc_profile.stamina_cost,
                             retaliation_trigger_event_id=player_damage_event.event_id,
+                            weapon_id=npc_profile.weapon_id,
                         ),
                         TimeAdvanced(
                             turn_number=turn,
@@ -360,12 +469,28 @@ class DeterministicResolver:
                     ]
                 )
                 tags.add("retaliation")
+                if npc_profile.weapon_id is not None:
+                    tags.add("weapon")
+                retaliation_weapon_name = (
+                    state.items[npc_profile.weapon_id].name
+                    if npc_profile.weapon_id is not None
+                    else None
+                )
+                retaliation = (
+                    f"{attack_target.name} retaliates with "
+                    f"{retaliation_weapon_name} for {npc_profile.damage} damage."
+                    if retaliation_weapon_name is not None
+                    else (
+                        f"{attack_target.name} retaliates "
+                        f"for {npc_profile.damage} damage."
+                    )
+                )
                 observations.extend(
                     [
-                        f"{attack_target.name} retaliates for {damage} damage.",
+                        retaliation,
                         (
                             f"{attack_target.name} spends "
-                            f"{CombatPolicy.UNARMED_STAMINA_COST} stamina."
+                            f"{npc_profile.stamina_cost} stamina."
                         ),
                     ]
                 )
@@ -464,7 +589,7 @@ class DeterministicResolver:
                 accepted=False,
                 reason=(
                     "Freeform language is preserved for a pluggable parser; use move, inspect, "
-                    "talk, take, give, attack, or wait in the deterministic demo."
+                    "talk, take, give, equip, attack, or wait in the deterministic demo."
                 ),
             )
         return ActionResult(accepted=False, reason="Unsupported action.")

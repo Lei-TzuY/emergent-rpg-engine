@@ -106,15 +106,23 @@ class ItemDropped(DomainEvent):
     to_location: str
 
 
+class WeaponEquipmentChanged(DomainEvent):
+    type: Literal["weapon_equipment_changed"] = "weapon_equipment_changed"
+    entity_id: str
+    from_item_id: str | None = None
+    to_item_id: str | None = None
+
+
 class CharacterDamaged(DomainEvent):
     type: Literal["character_damaged"] = "character_damaged"
     entity_id: str
     amount: int = Field(gt=0)
     source_id: str | None = None
-    cause: Literal["other", "unarmed_attack"] = "other"
+    cause: Literal["other", "unarmed_attack", "weapon_attack"] = "other"
     stamina_spend_event_id: str | None = None
     stamina_cost: int | None = Field(default=None, gt=0)
     retaliation_trigger_event_id: str | None = None
+    weapon_id: str | None = None
 
 
 class CharacterHealed(DomainEvent):
@@ -127,9 +135,10 @@ class CharacterStaminaSpent(DomainEvent):
     type: Literal["character_stamina_spent"] = "character_stamina_spent"
     entity_id: str
     amount: int = Field(gt=0)
-    reason: Literal["unarmed_attack", "retaliation"]
+    reason: Literal["unarmed_attack", "weapon_attack", "retaliation"]
     target_id: str
     trigger_damage_event_id: str | None = None
+    weapon_id: str | None = None
 
 
 class CharacterStaminaRecovered(DomainEvent):
@@ -230,6 +239,7 @@ Event = Annotated[
     | PlayerObjectiveFailed
     | ItemAcquired
     | ItemDropped
+    | WeaponEquipmentChanged
     | CharacterDamaged
     | CharacterHealed
     | CharacterStaminaSpent

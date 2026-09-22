@@ -63,6 +63,7 @@ class CharacterState(BaseModel):
     stamina: int = Field(default=10, ge=0, le=10)
     status_conditions: list[StatusCondition] = Field(default_factory=list)
     inventory: list[ItemId] = Field(default_factory=list)
+    equipped_weapon_id: ItemId | None = None
     current_location: LocationId
     alive: bool = True
     conscious: bool = True
@@ -276,6 +277,11 @@ class ScheduledLocationConditionExpiry(BaseModel):
     condition_code: str = Field(min_length=1)
 
 
+class WeaponProfile(BaseModel):
+    damage: int = Field(ge=1, le=10)
+    stamina_cost: int = Field(ge=1, le=10)
+
+
 class Item(BaseModel):
     id: ItemId
     name: str
@@ -286,6 +292,7 @@ class Item(BaseModel):
     unique: bool = True
     flags: set[str] = Field(default_factory=set)
     reveals_fact_id: FactId | None = None
+    weapon: WeaponProfile | None = None
 
     @model_validator(mode="after")
     def exactly_one_holder(self) -> Item:
@@ -361,6 +368,18 @@ class WorldState(BaseModel):
 
     @model_validator(mode="after")
     def canonical_reference_consistency(self) -> WorldState:
+        for entity_id, entity in self.entities.items():
+            equipped_weapon_id = entity.state.equipped_weapon_id
+            if equipped_weapon_id is None:
+                continue
+            weapon = self.items.get(equipped_weapon_id)
+            if weapon is None:
+                raise ValueError("equipped weapon must reference a configured item")
+            if weapon.weapon is None:
+                raise ValueError("equipped weapon item must have a weapon profile")
+            if weapon.owner_id != entity_id or equipped_weapon_id not in entity.state.inventory:
+                raise ValueError("equipped weapon must be owned by the equipping character")
+
         dialogue_rule_ids = [rule.id for rule in self.dialogue_relationship_rules]
         if len(dialogue_rule_ids) != len(set(dialogue_rule_ids)):
             raise ValueError("dialogue relationship rule ids must be unique")

@@ -40,6 +40,11 @@ class AttackAction(ActionModel):
     target: str = Field(min_length=1)
 
 
+class EquipAction(ActionModel):
+    kind: Literal["equip"] = "equip"
+    item: str | None = Field(default=None, min_length=1)
+
+
 class WaitAction(ActionModel):
     kind: Literal["wait"] = "wait"
     minutes: int = Field(default=10, ge=1, le=24 * 60)
@@ -57,6 +62,7 @@ PlayerAction = Annotated[
     | TakeAction
     | GiveAction
     | AttackAction
+    | EquipAction
     | WaitAction
     | FreeformAction,
     Field(discriminator="kind"),

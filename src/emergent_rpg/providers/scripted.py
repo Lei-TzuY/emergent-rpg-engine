@@ -5,6 +5,7 @@ import shlex
 
 from emergent_rpg.domain.actions import (
     AttackAction,
+    EquipAction,
     FreeformAction,
     GiveAction,
     InspectAction,
@@ -44,6 +45,10 @@ class DeterministicActionParser(ActionParser):
             return TakeAction(target=rest)
         if command in {"attack", "hit", "strike"} and rest:
             return AttackAction(target=rest)
+        if command in {"equip", "wield"} and rest:
+            return EquipAction(item=rest)
+        if command in {"unequip", "unwield"}:
+            return EquipAction(item=None)
         if command == "give" and len(parts) >= 4:
             separators = [
                 index

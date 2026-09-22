@@ -28,6 +28,7 @@ from emergent_rpg.domain.events import (
     ScheduledLocationConditionQueued,
     SimulationCycleProcessed,
     TimeAdvanced,
+    WeaponEquipmentChanged,
 )
 from emergent_rpg.domain.models import NPC, LocationCondition, PlayerCharacter, WorldState
 from emergent_rpg.engine.combat import CombatPolicy
@@ -58,6 +59,27 @@ def validate_state(
             if item_id not in state.items:
                 report.add_error(
                     "nonexistent_entity", f"inventory references missing item {item_id}"
+                )
+        equipped_weapon_id = entity.state.equipped_weapon_id
+        if equipped_weapon_id is not None:
+            equipped_weapon = state.items.get(equipped_weapon_id)
+            if equipped_weapon is None:
+                report.add_error(
+                    "invalid_equipped_weapon",
+                    f"{entity_id} equips missing item {equipped_weapon_id}",
+                )
+            elif equipped_weapon.weapon is None:
+                report.add_error(
+                    "invalid_equipped_weapon",
+                    f"{entity_id} equips non-weapon item {equipped_weapon_id}",
+                )
+            elif (
+                equipped_weapon.owner_id != entity_id
+                or equipped_weapon_id not in entity.state.inventory
+            ):
+                report.add_error(
+                    "invalid_equipped_weapon",
+                    f"{entity_id} does not canonically own equipped weapon {equipped_weapon_id}",
                 )
 
     inventory_counts = Counter(
@@ -198,6 +220,39 @@ def validate_state(
         if state.clock.absolute_minutes < previous.clock.absolute_minutes:
             report.add_error("time_went_backward", "world time decreased")
 
+        expected_equipment = {
+            entity_id: entity.state.equipped_weapon_id
+            for entity_id, entity in previous.entities.items()
+        }
+        for transition_event in transition_events or []:
+            if not isinstance(transition_event, WeaponEquipmentChanged):
+                continue
+            if transition_event.entity_id not in expected_equipment:
+                continue
+            if (
+                expected_equipment[transition_event.entity_id]
+                != transition_event.from_item_id
+            ):
+                report.add_error(
+                    "weapon_equipment_event_chain_mismatch",
+                    "weapon equipment event source does not match prior transition state",
+                )
+            expected_equipment[transition_event.entity_id] = transition_event.to_item_id
+
+        mismatched_equipment = [
+            entity_id
+            for entity_id, equipped_weapon_id in expected_equipment.items()
+            if entity_id in state.entities
+            and state.entities[entity_id].state.equipped_weapon_id
+            != equipped_weapon_id
+        ]
+        if mismatched_equipment:
+            report.add_error(
+                "weapon_equipment_changed_without_event",
+                "equipped weapon state does not match equipment event provenance: "
+                f"{sorted(mismatched_equipment)}",
+            )
+
         expected_health = {
             entity_id: entity.state.health
             for entity_id, entity in previous.entities.items()
@@ -306,7 +361,7 @@ def validate_state(
                 ] += 1
             elif (
                 isinstance(transition_event, CharacterDamaged)
-                and transition_event.cause == "unarmed_attack"
+                and CombatPolicy.is_attack_damage(transition_event)
                 and transition_event.stamina_spend_event_id is not None
             ):
                 spend = pending_attack_spends.pop(
@@ -319,12 +374,13 @@ def validate_state(
                     or transition_event.entity_id != spend.target_id
                     or transition_event.turn_number != spend.turn_number
                     or transition_event.stamina_cost != spend.amount
+                    or transition_event.weapon_id != spend.weapon_id
                 ):
                     report.add_error(
                         "combat_damage_without_stamina_spend",
-                        "unarmed damage lacks its exact prior stamina spend provenance",
+                        "attack damage lacks its exact prior stamina spend provenance",
                     )
-                elif spend.reason == "unarmed_attack":
+                elif spend.reason in {"unarmed_attack", "weapon_attack"}:
                     if transition_event.source_id != state.player_id:
                         report.add_error(
                             "invalid_player_attack_provenance",
@@ -601,6 +657,10 @@ def validate_event_preconditions(state: WorldState, event: Event) -> ValidationR
         reason = PlayerObjectivePolicy.validate_failure_event(state, event)
         if reason is not None:
             report.add_error("invalid_player_objective", reason)
+    elif isinstance(event, WeaponEquipmentChanged):
+        reason = CombatPolicy.validate_weapon_equipment_event(state, event)
+        if reason is not None:
+            report.add_error("invalid_weapon_equipment", reason)
     elif isinstance(event, CharacterDamaged):
         reason = CombatPolicy.validate_damage_event(state, event)
         if reason is not None:

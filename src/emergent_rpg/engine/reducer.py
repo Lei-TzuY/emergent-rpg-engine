@@ -29,6 +29,7 @@ from emergent_rpg.domain.events import (
     SimulationCycleProcessed,
     StatusApplied,
     TimeAdvanced,
+    WeaponEquipmentChanged,
 )
 from emergent_rpg.domain.models import (
     NPC,
@@ -68,6 +69,8 @@ def _transfer_owned_item(
         raise ReductionError(f"{event_name} source does not own item")
     if item.id in receiver.state.inventory:
         raise ReductionError(f"{event_name} receiver already owns item")
+    if source.state.equipped_weapon_id == item.id:
+        raise ReductionError(f"{event_name} cannot transfer an equipped weapon")
     source.state.inventory.remove(item.id)
     receiver.state.inventory.append(item.id)
     item.owner_id = receiver.id
@@ -184,11 +187,22 @@ def apply_event(state: WorldState, event: Event) -> WorldState:
             inventory.append(event.item_id)
     elif isinstance(event, ItemDropped):
         item = new_state.items[event.item_id]
-        inventory = new_state.entities[event.actor_id].state.inventory
+        actor_state = new_state.entities[event.actor_id].state
+        if actor_state.equipped_weapon_id == event.item_id:
+            raise ReductionError("ItemDropped cannot drop an equipped weapon")
+        inventory = actor_state.inventory
         if event.item_id in inventory:
             inventory.remove(event.item_id)
         item.owner_id = None
         item.location_id = event.to_location
+    elif isinstance(event, WeaponEquipmentChanged):
+        equipment_error = CombatPolicy.validate_weapon_equipment_event(
+            new_state,
+            event,
+        )
+        if equipment_error is not None:
+            raise ReductionError(equipment_error)
+        new_state.entities[event.entity_id].state.equipped_weapon_id = event.to_item_id
     elif isinstance(event, CharacterDamaged):
         damage_error = CombatPolicy.validate_damage_event(new_state, event)
         if damage_error is not None:

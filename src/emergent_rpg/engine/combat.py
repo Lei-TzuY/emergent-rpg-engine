@@ -1,11 +1,23 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Literal
+
 from emergent_rpg.domain.events import (
     CharacterDamaged,
     CharacterStaminaRecovered,
     CharacterStaminaSpent,
+    WeaponEquipmentChanged,
 )
 from emergent_rpg.domain.models import NPC, WorldState
+
+
+@dataclass(frozen=True)
+class AttackProfile:
+    damage: int
+    stamina_cost: int
+    weapon_id: str | None
+    cause: Literal["unarmed_attack", "weapon_attack"]
 
 
 class CombatPolicy:
@@ -23,7 +35,67 @@ class CombatPolicy:
         return any(status.incapacitating for status in state.status_conditions)
 
     @classmethod
-    def _validate_unarmed_participants(
+    def attack_profile(
+        cls,
+        state: WorldState,
+        source_id: str,
+    ) -> AttackProfile | None:
+        source = state.entities.get(source_id)
+        if source is None:
+            return None
+        weapon_id = source.state.equipped_weapon_id
+        if weapon_id is None:
+            return AttackProfile(
+                damage=cls.UNARMED_DAMAGE,
+                stamina_cost=cls.UNARMED_STAMINA_COST,
+                weapon_id=None,
+                cause="unarmed_attack",
+            )
+        weapon = state.items.get(weapon_id)
+        if (
+            weapon is None
+            or weapon.weapon is None
+            or weapon.owner_id != source_id
+            or weapon_id not in source.state.inventory
+        ):
+            return None
+        return AttackProfile(
+            damage=weapon.weapon.damage,
+            stamina_cost=weapon.weapon.stamina_cost,
+            weapon_id=weapon_id,
+            cause="weapon_attack",
+        )
+
+    @classmethod
+    def validate_weapon_equipment_event(
+        cls,
+        state: WorldState,
+        event: WeaponEquipmentChanged,
+    ) -> str | None:
+        entity = state.entities.get(event.entity_id)
+        if entity is None:
+            return f"equipment actor {event.entity_id} does not exist"
+        if not entity.state.alive or not entity.state.conscious:
+            return "equipment actor must be alive and conscious"
+        if cls._incapacitated(entity):
+            return "equipment actor must not be incapacitated"
+        if event.from_item_id != entity.state.equipped_weapon_id:
+            return "equipment source does not match canonical equipped weapon"
+        if event.from_item_id == event.to_item_id:
+            return "equipment change must select a different weapon"
+        if event.to_item_id is None:
+            return None
+        item = state.items.get(event.to_item_id)
+        if item is None:
+            return "equipped weapon item does not exist"
+        if item.weapon is None:
+            return "equipped item does not have a weapon profile"
+        if item.owner_id != entity.id or item.id not in entity.state.inventory:
+            return "equipped weapon must be owned by the actor"
+        return None
+
+    @classmethod
+    def _validate_attack_participants(
         cls,
         state: WorldState,
         source_id: str,
@@ -32,19 +104,19 @@ class CombatPolicy:
         source = state.entities.get(source_id)
         target = state.entities.get(target_id)
         if source is None:
-            return f"unarmed attack source {source_id} does not exist"
+            return f"attack source {source_id} does not exist"
         if target is None:
-            return f"unarmed attack target {target_id} does not exist"
+            return f"attack target {target_id} does not exist"
         if source.id == target.id:
-            return "unarmed attack source and target must differ"
+            return "attack source and target must differ"
         if not source.state.alive or not source.state.conscious:
-            return "unarmed attack source must be alive and conscious"
+            return "attack source must be alive and conscious"
         if cls._incapacitated(source):
-            return "unarmed attack source must not be incapacitated"
+            return "attack source must not be incapacitated"
         if not target.state.alive or not target.state.conscious:
-            return "unarmed attack target must be alive and conscious"
+            return "attack target must be alive and conscious"
         if source.state.current_location != target.state.current_location:
-            return "unarmed attack participants must be co-located"
+            return "attack participants must be co-located"
         return None
 
     @classmethod
@@ -56,7 +128,8 @@ class CombatPolicy:
     ) -> bool:
         npc = state.entities.get(npc_id)
         player = state.player()
-        if not isinstance(npc, NPC):
+        profile = cls.attack_profile(state, npc_id)
+        if not isinstance(npc, NPC) or profile is None:
             return False
         if npc.state.health <= incoming_damage:
             return False
@@ -64,7 +137,7 @@ class CombatPolicy:
             return False
         if cls._incapacitated(npc):
             return False
-        if npc.state.stamina < cls.UNARMED_STAMINA_COST:
+        if npc.state.stamina < profile.stamina_cost:
             return False
         if not player.state.alive or not player.state.conscious:
             return False
@@ -78,7 +151,7 @@ class CombatPolicy:
         state: WorldState,
         event: CharacterStaminaSpent,
     ) -> str | None:
-        participant_error = cls._validate_unarmed_participants(
+        participant_error = cls._validate_attack_participants(
             state,
             event.entity_id,
             event.target_id,
@@ -88,30 +161,37 @@ class CombatPolicy:
 
         source = state.entities[event.entity_id]
         target = state.entities[event.target_id]
-        if event.amount != cls.UNARMED_STAMINA_COST:
-            return f"unarmed stamina spend must equal {cls.UNARMED_STAMINA_COST}"
+        profile = cls.attack_profile(state, source.id)
+        if profile is None:
+            return "attack source has invalid equipped weapon state"
+        if event.weapon_id != profile.weapon_id:
+            return "stamina spend weapon does not match canonical equipment"
+        if event.amount != profile.stamina_cost:
+            return f"attack stamina spend must equal {profile.stamina_cost}"
         if source.state.stamina < event.amount:
-            return "insufficient stamina for unarmed attack"
+            return "insufficient stamina for attack"
 
-        if event.reason == "unarmed_attack":
-            if source.id != state.player_id:
-                return "player attack stamina spend must belong to the canonical player"
+        if source.id == state.player_id:
+            expected_reason = (
+                "weapon_attack" if profile.weapon_id is not None else "unarmed_attack"
+            )
+            if event.reason != expected_reason:
+                return f"player stamina spend reason must be {expected_reason}"
             if not isinstance(target, NPC):
                 return "player attack stamina spend target must be an NPC"
             if event.trigger_damage_event_id is not None:
                 return "player attack stamina spend cannot carry retaliation trigger"
             return None
 
-        if event.reason == "retaliation":
-            if not isinstance(source, NPC):
-                return "retaliation stamina spend source must be an NPC"
-            if target.id != state.player_id:
-                return "retaliation stamina spend target must be the canonical player"
-            if event.trigger_damage_event_id is None:
-                return "retaliation stamina spend requires trigger damage provenance"
-            return None
-
-        return f"unsupported stamina spend reason {event.reason}"
+        if event.reason != "retaliation":
+            return "NPC combat stamina spend must be a retaliation"
+        if not isinstance(source, NPC):
+            return "retaliation stamina spend source must be an NPC"
+        if target.id != state.player_id:
+            return "retaliation stamina spend target must be the canonical player"
+        if event.trigger_damage_event_id is None:
+            return "retaliation stamina spend requires trigger damage provenance"
+        return None
 
     @classmethod
     def expected_wait_recovery(
@@ -146,6 +226,10 @@ class CombatPolicy:
             return f"wait stamina recovery must equal {expected}"
         return None
 
+    @staticmethod
+    def is_attack_damage(event: CharacterDamaged) -> bool:
+        return event.cause in {"unarmed_attack", "weapon_attack"}
+
     @classmethod
     def validate_damage_event(
         cls,
@@ -163,16 +247,17 @@ class CombatPolicy:
                 event.stamina_spend_event_id is not None
                 or event.stamina_cost is not None
                 or event.retaliation_trigger_event_id is not None
+                or event.weapon_id is not None
             ):
-                return "non-unarmed damage cannot carry combat provenance"
+                return "non-combat damage cannot carry combat provenance"
             return None
 
-        if event.cause != "unarmed_attack":
+        if not cls.is_attack_damage(event):
             return f"unsupported damage cause {event.cause}"
         if event.source_id is None:
-            return "unarmed attack damage requires source provenance"
+            return "attack damage requires source provenance"
 
-        participant_error = cls._validate_unarmed_participants(
+        participant_error = cls._validate_attack_participants(
             state,
             event.source_id,
             event.entity_id,
@@ -182,35 +267,45 @@ class CombatPolicy:
 
         source = state.entities[event.source_id]
         target = state.entities[event.entity_id]
-        if event.amount != cls.UNARMED_DAMAGE:
-            return f"unarmed attack damage must equal {cls.UNARMED_DAMAGE}"
-
         has_spend_id = event.stamina_spend_event_id is not None
         has_stamina_cost = event.stamina_cost is not None
         if has_spend_id != has_stamina_cost:
-            return "unarmed attack stamina provenance is incomplete"
+            return "attack stamina provenance is incomplete"
 
         if not has_spend_id:
-            if source.id != state.player_id or not isinstance(target, NPC):
+            if (
+                event.cause != "unarmed_attack"
+                or event.weapon_id is not None
+                or source.id != state.player_id
+                or not isinstance(target, NPC)
+            ):
                 return "legacy unarmed damage must originate from the canonical player"
             if event.retaliation_trigger_event_id is not None:
                 return "legacy unarmed damage cannot carry retaliation provenance"
+            if event.amount != cls.UNARMED_DAMAGE:
+                return f"unarmed attack damage must equal {cls.UNARMED_DAMAGE}"
             return None
 
+        profile = cls.attack_profile(state, source.id)
+        if profile is None:
+            return "attack source has invalid equipped weapon state"
         assert event.stamina_cost is not None
-        if event.stamina_cost != cls.UNARMED_STAMINA_COST:
-            return (
-                "unarmed attack stamina cost must equal "
-                f"{cls.UNARMED_STAMINA_COST}"
-            )
-        if source.state.stamina > cls.MAX_STAMINA - event.stamina_cost:
-            return "unarmed attack damage requires prior stamina spend provenance"
+        if event.weapon_id != profile.weapon_id:
+            return "damage weapon does not match canonical equipment"
+        if event.cause != profile.cause:
+            return f"damage cause must be {profile.cause}"
+        if event.amount != profile.damage:
+            return f"attack damage must equal {profile.damage}"
+        if event.stamina_cost != profile.stamina_cost:
+            return f"attack stamina cost must equal {profile.stamina_cost}"
+        if source.state.stamina > cls.MAX_STAMINA - profile.stamina_cost:
+            return "attack damage requires prior stamina spend provenance"
 
         if source.id == state.player_id:
             if not isinstance(target, NPC):
-                return "player unarmed attack target must be an NPC"
+                return "player attack target must be an NPC"
             if event.retaliation_trigger_event_id is not None:
-                return "player unarmed damage cannot carry retaliation trigger"
+                return "player damage cannot carry retaliation trigger"
             return None
 
         if not isinstance(source, NPC):
