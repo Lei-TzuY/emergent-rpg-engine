@@ -238,7 +238,9 @@ def test_transition_validator_requires_attack_spend_damage_pairing() -> None:
     report = validate_state(after, previous=before, transition_events=[damage, advance])
 
     assert not report.valid
-    assert "unarmed damage lacks a prior matching stamina spend" in str(report.issues)
+    assert "combat_damage_without_stamina_spend" in {
+        issue.code for issue in report.issues
+    }
 
     spend_before = build_demo_world()
     spend = CharacterStaminaSpent(
