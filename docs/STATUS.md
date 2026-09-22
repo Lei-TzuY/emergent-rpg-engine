@@ -4,35 +4,36 @@ This file is the compact current-phase status. Historical milestone invariants a
 
 ## Current checkpoint
 
-- Milestones 1–37: **Complete**.
-- Milestone 38 — **Data-driven weapon profiles / equipment authority**: **Next**.
+- Milestones 1–38: **Complete**.
+- Milestone 39 — **Canonical player defeat / actionability authority**: **Next**.
 
-## Milestone 37 authority boundary
+## Milestone 38 authority boundary
 
-NPC retaliation is now one bounded deterministic response inside the shared combat authority:
+Weapons now participate in the same canonical, typed, replayable combat pipeline as unarmed attacks:
 
 ```text
-accepted player unarmed attack
-→ player stamina spend + player damage
-→ if struck NPC remains actionable and funded:
-     one NPC retaliation spend
-   → one provenance-linked NPC damage against player
-→ shared combat-time / health / stamina transition validation
+owned Item.weapon profile
+→ typed equip / unequip event
+→ canonical equipped_weapon_id
+→ attack profile derived from canonical item data
+→ provenance-linked stamina spend + damage
+→ optional bounded retaliation
+→ whole-transition equipment/combat validation
 → atomic persistence / replay
 ```
 
-The retaliation spend identifies the exact triggering player damage event. Retaliation damage identifies both its exact stamina spend and the same player-damage trigger. Whole-transition validation rejects missing/mismatched triggers and consumes each player-damage trigger at most once, so duplicated responses fail closed.
+Equipment changes require canonical custody, liveness/consciousness, non-incapacitation, an actual weapon profile, and an exact `from_item_id` match. Direct equipment-state mutation without a corresponding typed event is rejected by transition validation.
 
-Dead, unconscious, incapacitated, remote, or exhausted NPCs do not retaliate. Normal player attack spends are still restricted to the canonical player, while retaliation spends are restricted to NPC→canonical-player response. The provider cannot request or suppress retaliation; it remains deterministic resolver policy.
+Weapon attacks carry the exact weapon id through stamina spend and damage provenance. Damage and stamina cost are re-derived from the canonical weapon profile, not accepted from prose or arbitrary event numbers. Unequipping restores the existing deterministic unarmed profile. Equipped weapons cannot be dropped or transferred until unequipped.
 
-The same canonical health/stamina stores and fixed unarmed cost/damage apply to both actors. Retaliation can lethally transition the player through the existing reducer and transition-aware narration path. Provider failure remains zero-commit across both sides of the exchange.
+Ashfall Relay includes an executable `relay wrench` weapon (damage 4 / stamina cost 4), and the equipment state is visible through API, CLI, browser, and structured action parsing. The complete take → equip → attack → retaliation → persistence/replay path is covered.
 
-The fully green implementation head `3f6f70a34bf5a503028ddf771a2f3f357564ca76` passed wheel/browser packaging, Ruff, strict mypy, **298 pytest tests**, the seeded 1,000-turn consistency evaluation and verifier (**1,058 submissions / 1,000 accepted / failures=[]**), and the autonomy/custody/social evaluation and verifier with `failures=[]`.
+The fully green implementation head `391b1cf2294ebe975b3f9d2d4e3ae8b271f5265c` passed wheel/browser packaging, Ruff, strict mypy across 62 source files, **306 pytest tests**, the seeded 1,000-turn consistency evaluation (**1,058 submissions / 1,000 accepted / failures=[] / passed=true**), and the autonomy/custody/social integration evaluation with `failures=[] / passed=true`.
 
-## Next frontier: Milestone 38
+## Next frontier: Milestone 39
 
-Combat is now symmetric enough to expose the next real limitation: attack damage and stamina cost are still hard-coded unarmed constants, while canonical items have only generic `item_type` / `flags` metadata.
+Lethal retaliation already transitions the player to `health=0`, `alive=false`, and `conscious=false`, but player action legality is still partly distributed across individual resolver branches. That means defeat is canonical in state but not yet canonical in action authority.
 
-Milestone 38 should add explicit structured weapon profiles and typed equipment authority. A weapon must be canonically owned before it can be equipped; equipment changes must be typed/replayable; an attack must carry weapon identity in its spend/damage provenance so validation can re-derive the exact bounded damage and stamina cost from world data. No equipped weapon means the current unarmed fallback.
+Milestone 39 should centralize player actionability so dead/unconscious actors cannot continue to mutate world state, and incapacitating conditions use one shared policy rather than scattered per-action checks. Rejected defeated-state actions must emit no material events and must preserve persistence/replay invariants.
 
-This phase should not expand into armor, hit chance, randomness, durability, arbitrary loot generation, initiative rounds, or broad combat AI.
+Armor, hit chance, initiative, resurrection/respawn, and broad combat AI remain outside this phase.
