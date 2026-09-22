@@ -11,7 +11,7 @@ from emergent_rpg.domain.events import (
     PlayerItemGiven,
     WeaponEquipmentChanged,
 )
-from emergent_rpg.domain.models import GameSession, NPC, WorldState
+from emergent_rpg.domain.models import NPC, GameSession, WorldState
 from emergent_rpg.engine.combat import CombatPolicy
 from emergent_rpg.engine.narrative import ScenePlan
 from emergent_rpg.engine.reducer import ReductionError, apply_event
