@@ -37,7 +37,8 @@ The project advances by coherent executable slices rather than placeholder subsy
 33. **Data-driven objective outcome consequences** — bind validated completion/failure outcomes to bounded replayable fact/relationship consequences through existing event authorities, deterministic priority, and one-shot outcome provenance. **Complete.**
 34. **Objective-triggered scheduled world consequences** — allow validated objective outcomes to enqueue bounded replayable environmental consequences into the existing canonical world-event timeline. **Complete.**
 35. **Deterministic player combat / damage provenance** — add a typed player attack action and provenance-rich validated damage authority across parser/resolver/reducer/API/browser paths without allowing prose to decide damage. **Complete.**
-36. **Replayable combat stamina economy / rest recovery** — make canonical stamina an executable resource with typed spend/recovery provenance, attack affordability, player-visible resource projection, and deterministic rest recovery. **Next.**
+36. **Replayable combat stamina economy / rest recovery** — make canonical stamina an executable resource with typed spend/recovery provenance, attack affordability, player-visible resource projection, and deterministic rest recovery. **Complete.**
+37. **Actor-symmetric bounded NPC retaliation** — let a surviving local NPC perform at most one deterministic retaliatory unarmed strike through shared stamina/damage provenance rather than a separate combat mutation path. **Next.**
 
 ## Milestone 3 invariant
 
@@ -749,3 +750,64 @@ player-visible stamina
 ```
 
 Stamina changes must never be direct resolver mutations. Spend/recovery events need exact actor, amount, and reason provenance; transition validation should reconstruct canonical stamina just as Milestone 35 reconstructs health. Attacks with insufficient stamina must reject with zero material events. Recovery must be bounded at the canonical maximum and tied to an explicit deterministic rest/wait rule rather than wall-clock time. Player-facing CLI/API/browser state should expose health/stamina once those values affect legal action choice. Weapons, armor, NPC retaliation, initiative, and combat AI remain later promotions rather than being mixed into this resource-authority milestone.
+
+
+## Milestone 36 invariant
+
+Canonical stamina is now executable, replayable action-economy state rather than dormant metadata:
+
+```text
+AttackAction
+→ sufficient canonical stamina
+→ CharacterStaminaSpent(
+     canonical player,
+     fixed CombatPolicy.UNARMED_STAMINA_COST,
+     exact target,
+     reason = unarmed_attack
+   )
+→ CharacterDamaged(
+     fixed unarmed damage,
+     stamina_spend_event_id = exact prior spend event id,
+     stamina_cost = exact fixed cost
+   )
+→ TimeAdvanced(cause = combat)
+→ transition provenance validation
+→ atomic persistence / replay
+
+WaitAction(minutes = N)
+→ bounded CharacterStaminaRecovered(
+     canonical player,
+     reason = wait,
+     wait_minutes = N
+   ) when stamina is below maximum
+→ TimeAdvanced(cause = wait)
+→ transition provenance validation
+→ atomic persistence / replay
+```
+
+The resolver never mutates stamina directly. Event validation rechecks actor, liveness/consciousness, co-location, exact spend/recovery amounts, target, affordability, and recovery bounds; the reducer repeats those checks before changing stamina. Whole-transition validation reconstructs expected stamina, requires every M36 unarmed damage event to reference the exact earlier spend event, rejects unconsumed spends, matches combat damage to combat time, and requires recovery to match explicit wait-time provenance.
+
+M35 durability remains intact. Persisted unarmed damage events created before Milestone 36 have neither `stamina_spend_event_id` nor `stamina_cost`; that complete absence is treated as the legacy M35 replay shape. New M36 resolver output always sets both fields, a half-present marker fails closed, and non-unarmed damage cannot carry stamina provenance.
+
+Because stamina now affects legal action choice, health/stamina are player-visible through the API projection, CLI state renderer, browser UI, and the bounded structured action-parser visible surface. Insufficient stamina rejects an attack before any material event is emitted. Provider/narration failure still preserves zero-partial-commit semantics for stamina, damage, time, events, state, and turn history.
+
+Focused coverage proves exact spend→damage event-id linkage, insufficient-stamina rejection, depletion→wait recovery→renewed attack, bounded/capped recovery, forged spend/recovery rejection, spend/damage/time pairing, recovery/wait pairing, direct stamina mutation rejection, M35 unarmed replay compatibility, legacy `TimeAdvanced` compatibility, and API/CLI/browser/provider visibility. The fully green implementation head `cec776e0c850d43c0d2d6e14f92fc970c1b84e1e` passed wheel/browser packaging, Ruff, strict mypy, **292 pytest tests**, the seeded 1,000-accepted-turn consistency evaluation (**1,058 submitted / 1,000 accepted / failures=[] / passed=true**) and verifier, plus the autonomy/custody/social integration evaluation and verifier with `failures=[]`.
+
+## Promotion gate for Milestone 37
+
+Milestones 35–36 now give the player a deterministic attack, canonical damage authority, and replayable stamina economy. The next valuable combat frontier is not weapons or a generic initiative framework; it is proving that the same authority can safely drive a bounded autonomous opponent response.
+
+Milestone 37 should add one actor-symmetric retaliation vertical slice:
+
+```text
+accepted player unarmed attack
+→ target survives and remains able to act
+→ deterministic retaliation eligibility
+→ at most one typed NPC stamina spend
+→ provenance-linked NPC unarmed damage against player
+→ shared reducer / transition validation
+→ lethal player-state handling / narration
+→ atomic persistence / replay
+```
+
+NPC retaliation must reuse the same canonical stamina and health stores, not add NPC-only combat state. Retaliation needs exact NPC source/target/spend provenance, co-location, liveness/consciousness, affordability, fixed bounded damage, and one-response-per-trigger semantics. A killed/incapacitated/exhausted target cannot retaliate. The player provider must not decide whether retaliation occurs. Initiative rounds, arbitrary NPC aggression goals, weapons/armor, hit chance, and combat AI remain later promotions.
