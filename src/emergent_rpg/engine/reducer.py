@@ -39,6 +39,7 @@ from emergent_rpg.domain.models import (
     StatusCondition,
     WorldState,
 )
+from emergent_rpg.engine.actionability import PlayerActionabilityPolicy
 from emergent_rpg.engine.combat import CombatPolicy
 from emergent_rpg.engine.dialogue import DialogueRelationshipPolicy
 from emergent_rpg.engine.objective_outcomes import ObjectiveOutcomeConsequencePolicy
@@ -82,6 +83,14 @@ def apply_event(state: WorldState, event: Event) -> WorldState:
     new_state.turn_number = max(new_state.turn_number, event.turn_number)
 
     if isinstance(event, PlayerMoved):
+        if event.entity_id != new_state.player_id:
+            raise ReductionError("PlayerMoved target is not the canonical player")
+        actionability_error = PlayerActionabilityPolicy.validate_player_state(
+            new_state,
+            physical=True,
+        )
+        if actionability_error is not None:
+            raise ReductionError(actionability_error)
         new_state.entities[event.entity_id].state.current_location = event.to_location
     elif isinstance(event, NPCMoved):
         npc = new_state.entities[event.npc_id]
@@ -122,8 +131,12 @@ def apply_event(state: WorldState, event: Event) -> WorldState:
             raise ReductionError("PlayerItemGiven source is not the canonical player")
         if not isinstance(receiver, NPC):
             raise ReductionError("PlayerItemGiven receiver is not an NPC")
-        if not source.state.alive or not source.state.conscious:
-            raise ReductionError("PlayerItemGiven source cannot act")
+        actionability_error = PlayerActionabilityPolicy.validate_player_state(
+            new_state,
+            physical=True,
+        )
+        if actionability_error is not None:
+            raise ReductionError(actionability_error)
         if not receiver.state.alive or not receiver.state.conscious:
             raise ReductionError("PlayerItemGiven receiver cannot receive an item")
         if source.state.current_location != receiver.state.current_location:
@@ -175,6 +188,13 @@ def apply_event(state: WorldState, event: Event) -> WorldState:
         new_state.active_player_objective_ids.discard(event.objective_id)
         new_state.failed_player_objective_ids.add(event.objective_id)
     elif isinstance(event, ItemAcquired):
+        if event.actor_id == new_state.player_id:
+            actionability_error = PlayerActionabilityPolicy.validate_player_state(
+                new_state,
+                physical=True,
+            )
+            if actionability_error is not None:
+                raise ReductionError(actionability_error)
         item = new_state.items[event.item_id]
         if item.owner_id is not None and item.owner_id in new_state.entities:
             previous = new_state.entities[item.owner_id].state.inventory
@@ -286,6 +306,13 @@ def apply_event(state: WorldState, event: Event) -> WorldState:
                 if rule.once:
                     new_state.applied_dialogue_relationship_rule_ids.add(rule.id)
     elif isinstance(event, TimeAdvanced):
+        if event.cause == "wait":
+            actionability_error = PlayerActionabilityPolicy.validate_player_state(
+                new_state,
+                physical=False,
+            )
+            if actionability_error is not None:
+                raise ReductionError(actionability_error)
         new_state.clock = new_state.clock.advanced(event.minutes)
     elif isinstance(event, SimulationCycleProcessed):
         new_state.simulation.next_due_absolute_minute = (
