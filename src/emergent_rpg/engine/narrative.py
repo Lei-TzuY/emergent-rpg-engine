@@ -30,7 +30,6 @@ class DeterministicNarrativePlanner:
         action: PlayerAction,
         result: ActionResult,
     ) -> ScenePlan:
-        del state_before
         participants = sorted(result.involved_entities)
         fact_reveals: dict[str, list[str]] = {}
 
@@ -62,9 +61,27 @@ class DeterministicNarrativePlanner:
             fact_reveals=fact_reveals,
         )
 
-    def validate(self, state: WorldState, plan: ScenePlan) -> ValidationReport:
+    def validate(
+        self,
+        state_before: WorldState,
+        state_after: WorldState,
+        plan: ScenePlan,
+    ) -> ValidationReport:
+        newly_inactive = {
+            entity_id
+            for entity_id in plan.participating_entities
+            if entity_id in state_before.entities
+            and entity_id in state_after.entities
+            and state_before.entities[entity_id].state.alive
+            and state_before.entities[entity_id].state.conscious
+            and (
+                not state_after.entities[entity_id].state.alive
+                or not state_after.entities[entity_id].state.conscious
+            )
+        }
         return validate_scene_participation(
-            state,
+            state_after,
             plan.participating_entities,
             plan.fact_reveals,
+            allow_inactive_participants=newly_inactive,
         )
