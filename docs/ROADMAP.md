@@ -31,7 +31,10 @@ The project advances by coherent executable slices rather than placeholder subsy
 27. **Autonomous NPC item acquisition / custody** — knowledge-scoped acquisition goals, existing `ItemAcquired` authority, generic custody validation, observer-scoped memory cleanup, persistence/replay, and off-screen execution. **Complete.**
 28. **Replayable item handoff / delivery goals** — canonical owner-to-owner custody transfer with exact source/receiver/item/goal provenance, knowledge-scoped rendezvous planning, unique ownership, and replay-safe inventory movement. **Complete.**
 29. **Player→NPC item handoff / quest turn-in** — typed player `GiveAction`, local receiver visibility, deterministic custody transfer, parser/API/browser parity, transactional rejection, replay-safe player-to-NPC inventory movement, and matching acquisition-goal completion. **Complete.**
-30. **Data-driven item turn-in consequences / rewards** — canonical world-pack rules that match validated handoffs or turn-ins and emit bounded replayable consequences through existing fact/relationship authority. **Next.**
+30. **Data-driven item turn-in consequences / rewards** — canonical world-pack rules that match validated handoffs or turn-ins and emit bounded replayable consequences through existing fact/relationship authority. **Complete.**
+31. **Replayable player objective progression** — canonical data-driven objective definitions, deterministic activation/completion fixed-point, typed lifecycle events, hidden-prerequisite-safe player projection, persistence/replay, and provider-failure atomicity. **Complete.**
+32. **Replayable player objective deadlines / failure lifecycle** — canonical absolute-minute deadlines, typed validated failure events, completion-before-failure precedence, active/completed/failed provenance, and CLI/API/browser projection. **Complete.**
+33. **Data-driven objective outcome consequences** — bind validated completion/failure outcomes to bounded replayable world consequences through existing event authorities without creating a second mutation path. **Next.**
 
 ## Milestone 3 invariant
 
@@ -560,3 +563,60 @@ validated PlayerItemGiven / matching turn-in context
 ```
 
 Rules must match canonical participants/item and optional goal/fact prerequisites without exposing NPC-private planning state to the player or provider. Repeated delivery must not farm one-shot rewards. Consequences should reuse existing `RelationshipChanged`, fact discovery/learning, or other established event authority rather than mutating state directly. Unmatched/invalid handoffs must produce no reward, and provider/narration failure must preserve the existing zero-partial-commit guarantee. CLI/API/browser execution, persistence/replay, and the real 1,000-turn continuity gate must remain green.
+
+
+## Milestone 30 invariant
+
+Item turn-in consequences are canonical world-pack policy rather than resolver-specific quest branches. Validated player-to-NPC handoff context is matched against deterministic one-shot rules, and consequences reuse existing fact/relationship event authority. Applied-rule provenance is persisted so repeated handoffs cannot farm rewards. Unmatched or invalid handoffs produce no reward, and provider failure preserves zero-partial-commit semantics. Detailed evidence remains in `docs/ITEM_TURN_IN_CONSEQUENCES.md`.
+
+## Milestone 31 invariant
+
+Player objectives are derived from canonical state, not narration:
+
+```text
+player facts / custody / applied turn-in provenance / completed objectives
+→ deterministic PlayerObjectivePolicy fixed-point
+→ PlayerObjectiveActivated / PlayerObjectiveCompleted
+→ generic validation
+→ reducer-owned lifecycle state
+→ player-visible active/completed projection
+→ persistence / replay
+```
+
+Pending objective definitions and prerequisite ids remain hidden from player-facing transports. Dependency graphs must be acyclic, forged lifecycle events fail closed, and provider failure before commit leaves objective progression unpersisted.
+
+## Milestone 32 invariant
+
+Objective deadlines extend the same lifecycle authority instead of introducing a timer-side mutation path:
+
+```text
+accepted action advances canonical world time
+→ objective activation/completion fixed-point
+→ earned completion takes precedence
+→ otherwise due objective emits PlayerObjectiveFailed
+→ generic event validation
+→ reducer-owned active/completed/failed state
+→ CLI/API/browser projection
+→ atomic persistence / replay
+```
+
+Deadlines are absolute canonical world minutes. Failure may terminate either an active objective or a still-pending objective whose activation prerequisites were never met by its deadline. If an objective becomes activation-ready because another objective completes in the same fixed-point, it receives another activation/completion pass before failure is considered. Active, completed, and failed sets are mutually disjoint and transition-state validation requires exact lifecycle-event provenance.
+
+Provider failure remains before persistence, so deadline-triggered activation/failure events, turns, and state remain uncommitted on narration failure. Pending objective definitions and prerequisites are still hidden; only active/completed/failed public objective metadata is projected.
+
+## Promotion gate for Milestone 33
+
+Milestone 32 makes objective lifecycle truth replayable, including terminal failure, but objective outcomes are still mostly observational: completion/failure changes objective state without a generic cross-world consequence layer.
+
+The next coherent slice should make objective outcomes capable of triggering declarative, bounded consequences without adding quest-specific branches:
+
+```text
+validated PlayerObjectiveCompleted / PlayerObjectiveFailed
++ canonical objective-outcome rule
+→ deterministic priority / one-shot provenance
+→ existing typed fact / relationship / scheduled-world consequence authority
+→ ordinary validation / reduction
+→ atomic persistence / replay
+```
+
+Outcome rules must not mutate canonical state directly. They should reuse existing typed event authorities, remain deterministic under replay, reject forged provenance, preserve hidden objective prerequisites, and retain provider-failure zero-commit semantics. Completion/failure consequences must have explicit ordering and bounded fan-out rather than recursively creating an unbounded rule engine.
