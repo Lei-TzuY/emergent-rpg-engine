@@ -294,20 +294,23 @@ class DeterministicResolver:
                     reason="You do not have enough stamina to attack.",
                 )
             damage = CombatPolicy.UNARMED_DAMAGE
+            spend_event = CharacterStaminaSpent(
+                turn_number=turn,
+                entity_id=player.id,
+                amount=CombatPolicy.UNARMED_STAMINA_COST,
+                reason="unarmed_attack",
+                target_id=attack_target.id,
+            )
             events: list[Event] = [
-                CharacterStaminaSpent(
-                    turn_number=turn,
-                    entity_id=player.id,
-                    amount=CombatPolicy.UNARMED_STAMINA_COST,
-                    reason="unarmed_attack",
-                    target_id=attack_target.id,
-                ),
+                spend_event,
                 CharacterDamaged(
                     turn_number=turn,
                     entity_id=attack_target.id,
                     amount=damage,
                     source_id=player.id,
                     cause="unarmed_attack",
+                    stamina_spend_event_id=spend_event.event_id,
+                    stamina_cost=CombatPolicy.UNARMED_STAMINA_COST,
                 ),
                 TimeAdvanced(
                     turn_number=turn,
