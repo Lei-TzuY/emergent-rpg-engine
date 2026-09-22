@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from emergent_rpg.domain.actions import (
@@ -370,7 +372,7 @@ class DeterministicResolver:
                     reason="You do not have enough stamina to attack.",
                 )
 
-            player_reason = (
+            player_reason: Literal["unarmed_attack", "weapon_attack"] = (
                 "weapon_attack"
                 if player_profile.weapon_id is not None
                 else "unarmed_attack"
