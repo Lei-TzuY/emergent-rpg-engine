@@ -32,6 +32,7 @@ def test_ui_shell_and_assets_are_served_without_hidden_world_data(tmp_path: Path
     assert stylesheet.status_code == 200
     assert 'id="action-form"' in page.text
     assert 'id="history-log"' in page.text
+    assert 'id="player-vitals"' in page.text
     assert 'id="active-objectives"' in page.text
     assert 'id="completed-objectives"' in page.text
     assert 'id="failed-objectives"' in page.text
@@ -42,6 +43,8 @@ def test_ui_shell_and_assets_are_served_without_hidden_world_data(tmp_path: Path
     assert "view.active_objectives" in script.text
     assert "view.completed_objectives" in script.text
     assert "view.failed_objectives" in script.text
+    assert "view.health" in script.text
+    assert "view.stamina" in script.text
     assert "objective.deadline" in script.text
     assert "02:13" not in page.text + script.text
     assert "fact_blackout_window" not in page.text + script.text
@@ -59,6 +62,8 @@ def test_ui_consumed_api_contract_supports_session_action_and_history(tmp_path: 
     history = client.get(f"/sessions/{session_id}/history?limit=100")
 
     assert created.status_code == 201
+    assert created.json()["state"]["health"] == 10
+    assert created.json()["state"]["stamina"] == 10
     assert action.status_code == 200
     assert action.json()["accepted"] is True
     assert action.json()["state"]["inventory"][0]["name"] == "brass key"
