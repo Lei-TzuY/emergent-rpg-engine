@@ -112,6 +112,8 @@ class CharacterDamaged(DomainEvent):
     amount: int = Field(gt=0)
     source_id: str | None = None
     cause: Literal["other", "unarmed_attack"] = "other"
+    stamina_spend_event_id: str | None = None
+    stamina_cost: int | None = Field(default=None, gt=0)
 
 
 class CharacterHealed(DomainEvent):
