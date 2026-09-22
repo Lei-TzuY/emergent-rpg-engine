@@ -38,12 +38,27 @@ class ObjectiveOutcomeConsequencePolicy:
         )
 
     @classmethod
+    def _outcome_consumed(
+        cls,
+        state: WorldState,
+        objective_id: str,
+        outcome: ObjectiveOutcome,
+    ) -> bool:
+        return any(
+            rule.id in state.applied_objective_outcome_consequence_rule_ids
+            for rule in state.objective_outcome_consequence_rules
+            if rule.objective_id == objective_id and rule.outcome == outcome
+        )
+
+    @classmethod
     def eligible_rules(
         cls,
         state: WorldState,
         objective_id: str,
         outcome: ObjectiveOutcome,
     ) -> list[ObjectiveOutcomeConsequenceRule]:
+        if cls._outcome_consumed(state, objective_id, outcome):
+            return []
         eligible = [
             rule
             for rule in state.objective_outcome_consequence_rules
