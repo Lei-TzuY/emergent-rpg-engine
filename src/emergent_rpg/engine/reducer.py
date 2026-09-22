@@ -23,6 +23,7 @@ from emergent_rpg.domain.events import (
     RelationshipChanged,
     ScheduledLocationConditionApplied,
     ScheduledLocationConditionExpired,
+    ScheduledLocationConditionQueued,
     SimulationCycleProcessed,
     StatusApplied,
     TimeAdvanced,
@@ -30,12 +31,14 @@ from emergent_rpg.domain.events import (
 from emergent_rpg.domain.models import (
     NPC,
     PlayerCharacter,
+    ScheduledLocationCondition,
     ScheduledLocationConditionExpiry,
     StatusCondition,
     WorldState,
 )
 from emergent_rpg.engine.dialogue import DialogueRelationshipPolicy
 from emergent_rpg.engine.objective_outcomes import ObjectiveOutcomeConsequencePolicy
+from emergent_rpg.engine.objective_schedules import ObjectiveOutcomeSchedulePolicy
 from emergent_rpg.engine.turn_in import ItemTurnInConsequencePolicy
 
 
@@ -252,6 +255,34 @@ def apply_event(state: WorldState, event: Event) -> WorldState:
     elif isinstance(event, SimulationCycleProcessed):
         new_state.simulation.next_due_absolute_minute = (
             event.scheduled_absolute_minute + new_state.simulation.cadence_minutes
+        )
+    elif isinstance(event, ScheduledLocationConditionQueued):
+        rule_error = ObjectiveOutcomeSchedulePolicy.validate_queue_event(
+            new_state,
+            event,
+        )
+        if rule_error is not None:
+            raise ReductionError(rule_error)
+        schedule_rule = ObjectiveOutcomeSchedulePolicy.rule_by_id(
+            new_state,
+            event.rule_id,
+        )
+        if schedule_rule is None:
+            raise ReductionError("objective outcome schedule rule no longer exists")
+        new_state.scheduled_location_conditions.append(
+            ScheduledLocationCondition(
+                id=event.scheduled_event_id,
+                due_absolute_minute=event.due_absolute_minute,
+                location_id=schedule_rule.location_id,
+                condition=schedule_rule.condition.model_copy(deep=True),
+                expires_after_minutes=schedule_rule.expires_after_minutes,
+            )
+        )
+        new_state.scheduled_location_conditions.sort(
+            key=lambda scheduled: (scheduled.due_absolute_minute, scheduled.id)
+        )
+        new_state.applied_objective_outcome_scheduled_condition_rule_ids.add(
+            schedule_rule.id
         )
     elif isinstance(event, ScheduledLocationConditionApplied):
         activation_index = next(

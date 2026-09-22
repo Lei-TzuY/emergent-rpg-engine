@@ -22,11 +22,13 @@ from emergent_rpg.domain.events import (
     PlayerObjectiveFailed,
     ScheduledLocationConditionApplied,
     ScheduledLocationConditionExpired,
+    ScheduledLocationConditionQueued,
     SimulationCycleProcessed,
     TimeAdvanced,
 )
 from emergent_rpg.domain.models import NPC, LocationCondition, PlayerCharacter, WorldState
 from emergent_rpg.engine.environment import EnvironmentalRules
+from emergent_rpg.engine.objective_schedules import ObjectiveOutcomeSchedulePolicy
 from emergent_rpg.engine.objectives import PlayerObjectivePolicy
 from emergent_rpg.engine.social import SocialDisclosurePolicy
 from emergent_rpg.validation.models import ValidationReport
@@ -229,6 +231,72 @@ def validate_state(
                 "player objective state does not match lifecycle event provenance",
             )
 
+        queue_events = [
+            event
+            for event in transition_events or []
+            if isinstance(event, ScheduledLocationConditionQueued)
+        ]
+        queued_schedule_ids = {event.scheduled_event_id for event in queue_events}
+        applied_schedule_ids = {
+            event.scheduled_event_id
+            for event in transition_events or []
+            if isinstance(event, ScheduledLocationConditionApplied)
+        }
+        previous_schedules = {
+            scheduled.id: scheduled
+            for scheduled in previous.scheduled_location_conditions
+        }
+        current_schedules = {
+            scheduled.id: scheduled
+            for scheduled in state.scheduled_location_conditions
+        }
+        unexpected_schedule_additions = (
+            current_schedules.keys()
+            - previous_schedules.keys()
+            - queued_schedule_ids
+        )
+        if unexpected_schedule_additions:
+            report.add_error(
+                "scheduled_world_event_changed_without_queue",
+                "scheduled world events were added without queue provenance: "
+                f"{sorted(unexpected_schedule_additions)}",
+            )
+        missing_queued_schedules = (
+            queued_schedule_ids
+            - current_schedules.keys()
+            - applied_schedule_ids
+        )
+        if missing_queued_schedules:
+            report.add_error(
+                "scheduled_world_event_queue_not_applied",
+                "queued scheduled world events are missing from canonical state: "
+                f"{sorted(missing_queued_schedules)}",
+            )
+        mutated_pending_schedules = [
+            schedule_id
+            for schedule_id in previous_schedules.keys() & current_schedules.keys()
+            if previous_schedules[schedule_id] != current_schedules[schedule_id]
+        ]
+        if mutated_pending_schedules:
+            report.add_error(
+                "scheduled_world_event_mutated_in_place",
+                "pending scheduled world events changed in place: "
+                f"{sorted(mutated_pending_schedules)}",
+            )
+
+        expected_applied_schedule_rules = set(
+            previous.applied_objective_outcome_scheduled_condition_rule_ids
+        )
+        expected_applied_schedule_rules.update(event.rule_id for event in queue_events)
+        if (
+            state.applied_objective_outcome_scheduled_condition_rule_ids
+            != expected_applied_schedule_rules
+        ):
+            report.add_error(
+                "objective_schedule_rule_changed_without_event",
+                "objective schedule applied-rule state does not match queue provenance",
+            )
+
         for location_id, old_location in previous.locations.items():
             if location_id in state.locations:
                 removed_conditions = (
@@ -352,6 +420,10 @@ def validate_event_preconditions(state: WorldState, event: Event) -> ValidationR
                 "invalid_simulation_cycle",
                 "simulation cycle cannot be processed before world time reaches it",
             )
+    elif isinstance(event, ScheduledLocationConditionQueued):
+        reason = ObjectiveOutcomeSchedulePolicy.validate_queue_event(state, event)
+        if reason is not None:
+            report.add_error("invalid_objective_schedule", reason)
     elif isinstance(event, ScheduledLocationConditionApplied):
         _validate_scheduled_location_condition(state, event, report)
     elif isinstance(event, ScheduledLocationConditionExpired):

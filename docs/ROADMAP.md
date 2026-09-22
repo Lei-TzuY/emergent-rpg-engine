@@ -35,7 +35,8 @@ The project advances by coherent executable slices rather than placeholder subsy
 31. **Replayable player objective progression** — canonical data-driven objective definitions, deterministic activation/completion fixed-point, typed lifecycle events, hidden-prerequisite-safe player projection, persistence/replay, and provider-failure atomicity. **Complete.**
 32. **Replayable player objective deadlines / failure lifecycle** — canonical absolute-minute deadlines, typed validated failure events, completion-before-failure precedence, active/completed/failed provenance, and CLI/API/browser projection. **Complete.**
 33. **Data-driven objective outcome consequences** — bind validated completion/failure outcomes to bounded replayable fact/relationship consequences through existing event authorities, deterministic priority, and one-shot outcome provenance. **Complete.**
-34. **Objective-triggered scheduled world consequences** — allow validated objective outcomes to enqueue bounded replayable environmental consequences into the existing canonical world-event timeline. **Next.**
+34. **Objective-triggered scheduled world consequences** — allow validated objective outcomes to enqueue bounded replayable environmental consequences into the existing canonical world-event timeline. **Complete.**
+35. **Deterministic player combat / damage provenance** — add a typed player attack action and provenance-rich validated damage authority across parser/resolver/reducer/API/browser paths without allowing prose to decide damage. **Next.**
 
 ## Milestone 3 invariant
 
@@ -660,3 +661,43 @@ validated objective terminal outcome
 ```
 
 The queueing transition must be typed and independently validated. It must reject duplicate schedule ids, missing locations, invalid route targets, past-due schedules, and forged objective provenance. Objective policy must never directly activate or remove environmental conditions. Queue fan-out must remain bounded, scheduling order deterministic, pending schedules hidden from player-facing state, and provider failure must preserve zero-partial-commit semantics.
+
+
+## Milestone 34 invariant
+
+Objective outcomes may schedule future environmental changes, but they still do not directly mutate active world conditions:
+
+```text
+validated PlayerObjectiveCompleted / PlayerObjectiveFailed
+→ highest-priority ObjectiveOutcomeScheduledConditionRule
+→ ScheduledLocationConditionQueued
+→ validated canonical pending ScheduledLocationCondition
+→ existing DeterministicWorldEventScheduler at due world minute
+→ existing ScheduledLocationConditionApplied
+→ existing expiry / traversal / route authorities
+→ one replayable event log
+```
+
+The queue transition carries exact rule, objective, outcome, schedule id, and due-minute provenance. Generic event validation rechecks terminal objective truth, deterministic priority, future due time, schedule-id uniqueness, target location, route-locality, active/pending target conflicts, and one-shot outcome consumption. Transition-state validation independently requires queue-event provenance for newly added pending schedules, rejects in-place mutation of existing pending schedules, and reconstructs the applied schedule-rule set from typed queue events.
+
+The objective consequence layer never writes `Location.active_conditions`. It only appends a validated future `ScheduledLocationCondition`; the existing world-event scheduler remains the sole authority that activates it, and the existing expiry path remains the sole authority that later removes it. Pending schedules remain absent from the player-visible projection until activation.
+
+Focused integration coverage proves completion- and failure-triggered queueing, deterministic priority and anti-forgery, wrong due/duplicate-id rejection, direct pending-queue mutation rejection, hidden pending state, provider-failure zero-commit behavior, SQLite replay equality, and the complete objective → queue → scheduled activation → expiry path. The fully green implementation head `c397483943d05b871cb9bac27a413b85312e87c3` passed wheel/browser packaging, Ruff, strict mypy, full pytest, the seeded 1,000-accepted-turn consistency evaluation and verifier, and the autonomy integration evaluation and verifier.
+
+## Promotion gate for Milestone 35
+
+Milestones 31–34 complete a coherent objective lifecycle stack from activation through terminal outcomes and delayed environmental consequences. Further objective prerequisite/reward variants would now be lower-value expansion. The next architectural frontier should move to the underdeveloped combat subsystem.
+
+Canonical characters already own health, stamina, alive/conscious state, and a `CharacterDamaged` event exists, but there is no executable player combat action and the damage event does not encode attacker provenance. Milestone 35 should establish a deterministic combat authority rather than treating free-form prose as damage truth:
+
+```text
+player-visible local target
+→ typed AttackAction
+→ deterministic resolver checks target / co-location / liveness / stamina
+→ provenance-rich validated damage event
+→ reducer-owned health / alive / conscious transition
+→ TimeAdvanced / narration
+→ persistence / replay
+```
+
+The first combat slice should stay deliberately bounded: deterministic unarmed player attacks, local conscious NPC targets, explicit attacker provenance, fixed or data-driven bounded damage, ordinary transaction/provider-failure semantics, parser/API/browser parity, and forged/remote/dead-target rejection. It should reuse canonical health rather than introducing a second combat-state store.

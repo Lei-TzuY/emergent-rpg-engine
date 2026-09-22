@@ -26,6 +26,7 @@ from emergent_rpg.engine.npc import (
     build_npc_planning_context,
 )
 from emergent_rpg.engine.objective_outcomes import ObjectiveOutcomeConsequencePolicy
+from emergent_rpg.engine.objective_schedules import ObjectiveOutcomeSchedulePolicy
 from emergent_rpg.engine.objectives import PlayerObjectivePolicy
 from emergent_rpg.engine.reducer import apply_event, replay
 from emergent_rpg.engine.resolver import ActionResult, DeterministicResolver
@@ -131,6 +132,7 @@ class GameEngine:
             1,
             len(candidate.player_objectives) * 2
             + len(candidate.objective_outcome_consequence_rules)
+            + len(candidate.objective_outcome_scheduled_condition_rules)
             + 1,
         )
         for _ in range(convergence_limit):
@@ -179,6 +181,16 @@ class GameEngine:
                         )
                 if rule is not None and rule.observation:
                     observations.append(rule.observation)
+
+                _, queue_event = ObjectiveOutcomeSchedulePolicy.queue_event(
+                    candidate,
+                    event,
+                    candidate.turn_number,
+                )
+                if queue_event is not None:
+                    candidate = self._apply_validated_event(candidate, queue_event)
+                    player_events.append(queue_event)
+                    tags.add("objective_world_consequence")
 
                 inferred_after_consequence = self.mystery.infer_events(
                     candidate,

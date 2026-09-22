@@ -231,6 +231,18 @@ class LocationCondition(BaseModel):
     route: RouteEffect | None = None
 
 
+class ObjectiveOutcomeScheduledConditionRule(BaseModel):
+    id: str = Field(min_length=1)
+    objective_id: str = Field(min_length=1)
+    outcome: Literal["completed", "failed"]
+    scheduled_event_id: str = Field(min_length=1)
+    delay_minutes: int = Field(ge=1, le=30 * 24 * 60)
+    location_id: LocationId
+    condition: LocationCondition
+    expires_after_minutes: int | None = Field(default=20, ge=1, le=24 * 60)
+    priority: int = Field(default=0, ge=-100, le=100)
+
+
 class Location(BaseModel):
     id: LocationId
     name: str
@@ -333,6 +345,12 @@ class WorldState(BaseModel):
         default_factory=list
     )
     applied_objective_outcome_consequence_rule_ids: set[str] = Field(default_factory=set)
+    objective_outcome_scheduled_condition_rules: list[
+        ObjectiveOutcomeScheduledConditionRule
+    ] = Field(default_factory=list)
+    applied_objective_outcome_scheduled_condition_rule_ids: set[str] = Field(
+        default_factory=set
+    )
     simulation: SimulationState = Field(default_factory=SimulationState)
     scheduled_location_conditions: list[ScheduledLocationCondition] = Field(default_factory=list)
     scheduled_location_condition_expirations: list[ScheduledLocationConditionExpiry] = Field(
@@ -419,6 +437,41 @@ class WorldState(BaseModel):
                     raise ValueError(
                         "objective outcome rule cannot directly reward an inferred fact"
                     )
+
+        schedule_rule_ids = [
+            rule.id for rule in self.objective_outcome_scheduled_condition_rules
+        ]
+        if len(schedule_rule_ids) != len(set(schedule_rule_ids)):
+            raise ValueError("objective outcome schedule rule ids must be unique")
+        schedule_event_ids: list[str] = []
+        for schedule_rule in self.objective_outcome_scheduled_condition_rules:
+            if schedule_rule.objective_id not in objective_id_set:
+                raise ValueError("objective outcome schedule rule references missing objective")
+            location = self.locations.get(schedule_rule.location_id)
+            if location is None:
+                raise ValueError("objective outcome schedule rule references missing location")
+            if schedule_rule.condition.route is not None:
+                invalid_targets = (
+                    schedule_rule.condition.route.blocked_destination_ids
+                    - set(location.exits.values())
+                )
+                if invalid_targets:
+                    raise ValueError(
+                        "objective outcome schedule rule blocks non-local exits"
+                    )
+            schedule_event_ids.append(schedule_rule.scheduled_event_id)
+            if schedule_rule.expires_after_minutes is not None:
+                schedule_event_ids.append(f"{schedule_rule.scheduled_event_id}:expiry")
+        if len(schedule_event_ids) != len(set(schedule_event_ids)):
+            raise ValueError("objective outcome scheduled event ids must be unique")
+        unknown_schedule_applied = (
+            self.applied_objective_outcome_scheduled_condition_rule_ids
+            - set(schedule_rule_ids)
+        )
+        if unknown_schedule_applied:
+            raise ValueError(
+                "applied objective outcome schedule rules must reference configured rules"
+            )
 
         for dialogue_rule in self.dialogue_relationship_rules:
             speaker = self.entities.get(dialogue_rule.speaker_id)
