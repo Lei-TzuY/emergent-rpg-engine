@@ -60,6 +60,8 @@ def test_attack_emits_spend_damage_and_combat_time_as_one_valid_transition() -> 
     assert spend.amount == CombatPolicy.UNARMED_STAMINA_COST
     assert damage.entity_id == spend.target_id
     assert damage.source_id == spend.entity_id
+    assert damage.stamina_spend_event_id == spend.event_id
+    assert damage.stamina_cost == spend.amount
     assert advance.cause == "combat"
     assert advance.minutes == CombatPolicy.UNARMED_MINUTES
 
@@ -223,6 +225,8 @@ def test_transition_validator_requires_attack_spend_damage_pairing() -> None:
         source_id=before.player_id,
         cause="unarmed_attack",
         amount=CombatPolicy.UNARMED_DAMAGE,
+        stamina_spend_event_id="missing-spend",
+        stamina_cost=CombatPolicy.UNARMED_STAMINA_COST,
     )
     advance = TimeAdvanced(
         turn_number=1,
@@ -283,6 +287,30 @@ def test_direct_stamina_mutation_requires_typed_event_provenance() -> None:
     assert "character stamina does not match spend/recovery event provenance" in str(
         report.issues
     )
+
+
+def test_milestone35_unarmed_damage_without_stamina_marker_still_replays() -> None:
+    state = build_demo_world()
+    event = parse_event(
+        {
+            "type": "character_damaged",
+            "turn_number": 1,
+            "entity_id": "npc_lio",
+            "amount": CombatPolicy.UNARMED_DAMAGE,
+            "source_id": state.player_id,
+            "cause": "unarmed_attack",
+        }
+    )
+
+    assert isinstance(event, CharacterDamaged)
+    assert event.stamina_spend_event_id is None
+    assert event.stamina_cost is None
+    assert validate_event_preconditions(state, event).valid
+
+    after = apply_event(state, event)
+
+    assert _lio(after).state.health == 10 - CombatPolicy.UNARMED_DAMAGE
+    assert after.player().state.stamina == CombatPolicy.MAX_STAMINA
 
 
 def test_legacy_time_advanced_shape_defaults_to_other_cause() -> None:
