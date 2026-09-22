@@ -1142,9 +1142,14 @@ def _validate_inference_event(
 
 
 def validate_scene_participation(
-    state: WorldState, participants: list[str], fact_reveals: dict[str, list[str]]
+    state: WorldState,
+    participants: list[str],
+    fact_reveals: dict[str, list[str]],
+    *,
+    allow_inactive_participants: set[str] | None = None,
 ) -> ValidationReport:
     report = ValidationReport()
+    allowed_inactive = allow_inactive_participants or set()
     player_location = state.player().state.current_location
     for entity_id in participants:
         if entity_id not in state.entities:
@@ -1156,7 +1161,10 @@ def validate_scene_participation(
                 "impossible_character_location",
                 f"{entity_id} cannot participate from {entity.state.current_location}",
             )
-        if not entity.state.alive or not entity.state.conscious:
+        if (
+            (not entity.state.alive or not entity.state.conscious)
+            and entity_id not in allowed_inactive
+        ):
             report.add_error("inactive_participant", f"{entity_id} cannot participate in scene")
 
     for entity_id, fact_ids in fact_reveals.items():
