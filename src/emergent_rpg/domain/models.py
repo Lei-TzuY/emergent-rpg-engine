@@ -420,6 +420,30 @@ class WorldState(BaseModel):
             if objective_dependencies - objective_id_set:
                 raise ValueError("player objective references missing objective dependencies")
 
+        dependency_graph = {
+            objective.id: (
+                objective.activation_required_completed_objective_ids
+                | objective.completion_required_completed_objective_ids
+            )
+            for objective in self.player_objectives
+        }
+        visiting: set[str] = set()
+        visited: set[str] = set()
+
+        def visit_objective(objective_id: str) -> None:
+            if objective_id in visited:
+                return
+            if objective_id in visiting:
+                raise ValueError("player objective dependencies must be acyclic")
+            visiting.add(objective_id)
+            for dependency_id in sorted(dependency_graph[objective_id]):
+                visit_objective(dependency_id)
+            visiting.remove(objective_id)
+            visited.add(objective_id)
+
+        for objective_id in sorted(objective_id_set):
+            visit_objective(objective_id)
+
         for entity in self.entities.values():
             if not isinstance(entity, NPC):
                 continue
