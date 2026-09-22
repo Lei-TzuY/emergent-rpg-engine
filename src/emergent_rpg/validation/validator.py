@@ -19,6 +19,7 @@ from emergent_rpg.domain.events import (
     NPCItemLocationObserved,
     NPCLocationMapped,
     NPCMoved,
+    PlayerItemGiven,
     PlayerMoved,
     PlayerObjectiveActivated,
     PlayerObjectiveCompleted,
@@ -31,6 +32,7 @@ from emergent_rpg.domain.events import (
     WeaponEquipmentChanged,
 )
 from emergent_rpg.domain.models import NPC, LocationCondition, PlayerCharacter, WorldState
+from emergent_rpg.engine.actionability import PlayerActionabilityPolicy
 from emergent_rpg.engine.combat import CombatPolicy
 from emergent_rpg.engine.environment import EnvironmentalRules
 from emergent_rpg.engine.objective_schedules import ObjectiveOutcomeSchedulePolicy
@@ -635,6 +637,19 @@ def validate_event_preconditions(state: WorldState, event: Event) -> ValidationR
         _validate_npc_moved(state, event, report)
     elif isinstance(event, ItemAcquired):
         _validate_item_acquired(state, event, report)
+    elif isinstance(event, PlayerItemGiven):
+        if event.source_player_id != state.player_id:
+            report.add_error(
+                "inactive_participant",
+                "item handoff source must be the canonical player",
+            )
+        else:
+            reason = PlayerActionabilityPolicy.validate_player_state(
+                state,
+                physical=True,
+            )
+            if reason is not None:
+                report.add_error("inactive_participant", reason)
     elif isinstance(event, NPCLocationMapped):
         _validate_npc_location_mapped(state, event, report)
     elif isinstance(event, NPCItemLocationObserved):
@@ -685,6 +700,13 @@ def validate_event_preconditions(state: WorldState, event: Event) -> ValidationR
     elif isinstance(event, TimeAdvanced):
         if event.minutes <= 0:
             report.add_error("time_went_backward", "time advance must be positive")
+        if event.cause == "wait":
+            reason = PlayerActionabilityPolicy.validate_player_state(
+                state,
+                physical=False,
+            )
+            if reason is not None:
+                report.add_error("inactive_participant", reason)
         if (
             event.cause == "combat"
             and event.minutes != CombatPolicy.UNARMED_MINUTES
@@ -954,6 +976,13 @@ def _validate_player_moved(
     if not isinstance(player, PlayerCharacter) or event.entity_id != state.player_id:
         report.add_error("nonexistent_entity", f"missing player mover {event.entity_id}")
         return
+    actionability_error = PlayerActionabilityPolicy.validate_player_state(
+        state,
+        physical=True,
+    )
+    if actionability_error is not None:
+        report.add_error("inactive_participant", actionability_error)
+        return
     if event.from_location != player.state.current_location:
         report.add_error("impossible_character_location", "player move origin does not match state")
         return
@@ -1012,7 +1041,14 @@ def _validate_item_acquired(
     if item is None:
         report.add_error("nonexistent_entity", f"missing acquired item {event.item_id}")
         return
-    if not actor.state.alive or not actor.state.conscious:
+    if event.actor_id == state.player_id:
+        actionability_error = PlayerActionabilityPolicy.validate_player_state(
+            state,
+            physical=True,
+        )
+        if actionability_error is not None:
+            report.add_error("inactive_participant", actionability_error)
+    elif not actor.state.alive or not actor.state.conscious:
         report.add_error("inactive_participant", f"{event.actor_id} cannot acquire an item")
     if item.owner_id is not None or event.from_owner is not None:
         report.add_error("invalid_item_acquisition", "owned-item transfer is not supported")
