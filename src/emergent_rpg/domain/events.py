@@ -114,6 +114,7 @@ class CharacterDamaged(DomainEvent):
     cause: Literal["other", "unarmed_attack"] = "other"
     stamina_spend_event_id: str | None = None
     stamina_cost: int | None = Field(default=None, gt=0)
+    retaliation_trigger_event_id: str | None = None
 
 
 class CharacterHealed(DomainEvent):
@@ -126,8 +127,9 @@ class CharacterStaminaSpent(DomainEvent):
     type: Literal["character_stamina_spent"] = "character_stamina_spent"
     entity_id: str
     amount: int = Field(gt=0)
-    reason: Literal["unarmed_attack"]
+    reason: Literal["unarmed_attack", "retaliation"]
     target_id: str
+    trigger_damage_event_id: str | None = None
 
 
 class CharacterStaminaRecovered(DomainEvent):

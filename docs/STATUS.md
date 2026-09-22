@@ -4,42 +4,35 @@ This file is the compact current-phase status. Historical milestone invariants a
 
 ## Current checkpoint
 
-- Milestones 1–36: **Complete**.
-- Milestone 37 — **Actor-symmetric bounded NPC retaliation**: **Next**.
+- Milestones 1–37: **Complete**.
+- Milestone 38 — **Data-driven weapon profiles / equipment authority**: **Next**.
 
-## Milestone 36 authority boundary
+## Milestone 37 authority boundary
 
-Stamina is now canonical executable state with typed provenance:
+NPC retaliation is now one bounded deterministic response inside the shared combat authority:
 
 ```text
-AttackAction
-→ CharacterStaminaSpent
-→ provenance-linked CharacterDamaged
-→ TimeAdvanced(cause=combat)
-→ transition validation
-→ atomic persistence / replay
-
-WaitAction
-→ bounded CharacterStaminaRecovered when below max
-→ TimeAdvanced(cause=wait)
-→ transition validation
+accepted player unarmed attack
+→ player stamina spend + player damage
+→ if struck NPC remains actionable and funded:
+     one NPC retaliation spend
+   → one provenance-linked NPC damage against player
+→ shared combat-time / health / stamina transition validation
 → atomic persistence / replay
 ```
 
-An unarmed player attack costs exactly `CombatPolicy.UNARMED_STAMINA_COST`. The spend event identifies the canonical player and exact target; the damage event links back to that spend's event id and repeats the cost. Validator and reducer independently enforce actor, target, co-location, liveness/consciousness, fixed damage/cost, and affordability. Whole-transition validation reconstructs stamina and rejects missing/mismatched spend↔damage, combat-time, or wait↔recovery provenance.
+The retaliation spend identifies the exact triggering player damage event. Retaliation damage identifies both its exact stamina spend and the same player-damage trigger. Whole-transition validation rejects missing/mismatched triggers and consumes each player-damage trigger at most once, so duplicated responses fail closed.
 
-Wait recovery is deterministic and bounded by both elapsed wait minutes and the canonical stamina maximum. Waiting at full stamina emits no fake zero-value recovery event.
+Dead, unconscious, incapacitated, remote, or exhausted NPCs do not retaliate. Normal player attack spends are still restricted to the canonical player, while retaliation spends are restricted to NPC→canonical-player response. The provider cannot request or suppress retaliation; it remains deterministic resolver policy.
 
-M35 event logs remain replayable: an older `CharacterDamaged(cause="unarmed_attack")` with both stamina provenance fields absent uses the pre-stamina compatibility path. New M36 attacks always carry both fields; partial provenance is invalid.
+The same canonical health/stamina stores and fixed unarmed cost/damage apply to both actors. Retaliation can lethally transition the player through the existing reducer and transition-aware narration path. Provider failure remains zero-commit across both sides of the exchange.
 
-Health and stamina are now exposed in API, CLI, browser UI, and the structured action parser's visible state. Provider failure remains zero-commit across stamina, damage, time, state, events, and turn history.
+The fully green implementation head `3f6f70a34bf5a503028ddf771a2f3f357564ca76` passed wheel/browser packaging, Ruff, strict mypy, **298 pytest tests**, the seeded 1,000-turn consistency evaluation and verifier (**1,058 submissions / 1,000 accepted / failures=[]**), and the autonomy/custody/social evaluation and verifier with `failures=[]`.
 
-The fully green implementation head `cec776e0c850d43c0d2d6e14f92fc970c1b84e1e` passed wheel/browser packaging, Ruff, strict mypy, **292 pytest tests**, the seeded 1,000-turn consistency evaluation and verifier (**1,058 submissions / 1,000 accepted / failures=[]**), and the autonomy/custody/social evaluation and verifier with `failures=[]`.
+## Next frontier: Milestone 38
 
-## Next frontier: Milestone 37
+Combat is now symmetric enough to expose the next real limitation: attack damage and stamina cost are still hard-coded unarmed constants, while canonical items have only generic `item_type` / `flags` metadata.
 
-The next combat milestone should prove actor symmetry with one bounded deterministic NPC retaliation after a surviving legal player attack.
+Milestone 38 should add explicit structured weapon profiles and typed equipment authority. A weapon must be canonically owned before it can be equipped; equipment changes must be typed/replayable; an attack must carry weapon identity in its spend/damage provenance so validation can re-derive the exact bounded damage and stamina cost from world data. No equipped weapon means the current unarmed fallback.
 
-A retaliating NPC should spend its own canonical stamina and damage the player through the same provenance-rich authority, with at most one retaliation per player attack. Dead, unconscious, remote, incapacitated, or exhausted NPCs must not retaliate. Retaliation must be engine policy, not provider prose.
-
-This phase should not expand into weapons, armor, generic initiative rounds, arbitrary aggression goals, hit chance, or broad combat AI. Those become later promotions only after symmetric retaliation is replayably proven.
+This phase should not expand into armor, hit chance, randomness, durability, arbitrary loot generation, initiative rounds, or broad combat AI.

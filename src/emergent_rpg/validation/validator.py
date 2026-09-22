@@ -264,6 +264,8 @@ def validate_state(
             for entity_id, entity in previous.entities.items()
         }
         pending_attack_spends: dict[str, CharacterStaminaSpent] = {}
+        player_damage_events: dict[str, CharacterDamaged] = {}
+        consumed_retaliation_triggers: set[str] = set()
         combat_damage_turns: Counter[int] = Counter()
         combat_time_turns: Counter[int] = Counter()
         wait_recovery_keys: Counter[tuple[int, int]] = Counter()
@@ -277,6 +279,20 @@ def validate_state(
                         expected_stamina[transition_event.entity_id]
                         - transition_event.amount,
                     )
+                if transition_event.reason == "retaliation":
+                    trigger = player_damage_events.get(
+                        transition_event.trigger_damage_event_id or ""
+                    )
+                    if (
+                        trigger is None
+                        or trigger.source_id != transition_event.target_id
+                        or trigger.entity_id != transition_event.entity_id
+                        or transition_event.target_id != state.player_id
+                    ):
+                        report.add_error(
+                            "retaliation_without_player_attack",
+                            "retaliation spend lacks exact prior player damage provenance",
+                        )
                 pending_attack_spends[transition_event.event_id] = transition_event
             elif isinstance(transition_event, CharacterStaminaRecovered):
                 if transition_event.entity_id in expected_stamina:
@@ -308,6 +324,35 @@ def validate_state(
                         "combat_damage_without_stamina_spend",
                         "unarmed damage lacks its exact prior stamina spend provenance",
                     )
+                elif spend.reason == "unarmed_attack":
+                    if transition_event.source_id != state.player_id:
+                        report.add_error(
+                            "invalid_player_attack_provenance",
+                            "player attack damage source is not the canonical player",
+                        )
+                    else:
+                        player_damage_events[transition_event.event_id] = transition_event
+                elif spend.reason == "retaliation":
+                    trigger_id = spend.trigger_damage_event_id
+                    trigger = player_damage_events.get(trigger_id or "")
+                    if (
+                        trigger is None
+                        or transition_event.retaliation_trigger_event_id != trigger_id
+                        or transition_event.source_id != trigger.entity_id
+                        or transition_event.entity_id != trigger.source_id
+                        or transition_event.entity_id != state.player_id
+                    ):
+                        report.add_error(
+                            "invalid_retaliation_provenance",
+                            "retaliation damage does not match its player-attack trigger",
+                        )
+                    elif trigger_id in consumed_retaliation_triggers:
+                        report.add_error(
+                            "duplicate_retaliation",
+                            "player attack triggered more than one retaliation",
+                        )
+                    elif trigger_id is not None:
+                        consumed_retaliation_triggers.add(trigger_id)
                 combat_damage_turns[transition_event.turn_number] += 1
             elif isinstance(transition_event, TimeAdvanced):
                 if (
