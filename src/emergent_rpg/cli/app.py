@@ -74,13 +74,26 @@ def _render_state(state: WorldState) -> str:
     ]
     inventory = [state.items[item_id].name for item_id in player.state.inventory]
     objective_by_id = {objective.id: objective for objective in state.player_objectives}
+
+    def objective_label(objective_id: str) -> str:
+        objective = objective_by_id[objective_id]
+        if objective.deadline_absolute_minute is None:
+            return objective.title
+        day, minute_of_day = divmod(objective.deadline_absolute_minute, 24 * 60)
+        hour, minute = divmod(minute_of_day, 60)
+        return f"{objective.title} (due Day {day + 1}, {hour:02d}:{minute:02d})"
+
     active_objectives = [
-        objective_by_id[objective_id].title
+        objective_label(objective_id)
         for objective_id in sorted(state.active_player_objective_ids)
     ]
     completed_objectives = [
         objective_by_id[objective_id].title
         for objective_id in sorted(state.completed_player_objective_ids)
+    ]
+    failed_objectives = [
+        objective_by_id[objective_id].title
+        for objective_id in sorted(state.failed_player_objective_ids)
     ]
     return "\n".join(
         [
@@ -98,6 +111,10 @@ def _render_state(state: WorldState) -> str:
             (
                 "Completed objectives: "
                 + (", ".join(completed_objectives) if completed_objectives else "none")
+            ),
+            (
+                "Failed objectives: "
+                + (", ".join(failed_objectives) if failed_objectives else "none")
             ),
         ]
     )
