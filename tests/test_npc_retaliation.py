@@ -9,7 +9,7 @@ from emergent_rpg.domain.events import (
     Event,
     TimeAdvanced,
 )
-from emergent_rpg.domain.models import GameSession, NPC, StatusCondition, WorldState
+from emergent_rpg.domain.models import NPC, GameSession, StatusCondition, WorldState
 from emergent_rpg.engine.combat import CombatPolicy
 from emergent_rpg.engine.reducer import apply_event
 from emergent_rpg.engine.resolver import DeterministicResolver
