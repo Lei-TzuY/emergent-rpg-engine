@@ -34,7 +34,8 @@ The project advances by coherent executable slices rather than placeholder subsy
 30. **Data-driven item turn-in consequences / rewards** — canonical world-pack rules that match validated handoffs or turn-ins and emit bounded replayable consequences through existing fact/relationship authority. **Complete.**
 31. **Replayable player objective progression** — canonical data-driven objective definitions, deterministic activation/completion fixed-point, typed lifecycle events, hidden-prerequisite-safe player projection, persistence/replay, and provider-failure atomicity. **Complete.**
 32. **Replayable player objective deadlines / failure lifecycle** — canonical absolute-minute deadlines, typed validated failure events, completion-before-failure precedence, active/completed/failed provenance, and CLI/API/browser projection. **Complete.**
-33. **Data-driven objective outcome consequences** — bind validated completion/failure outcomes to bounded replayable world consequences through existing event authorities without creating a second mutation path. **Next.**
+33. **Data-driven objective outcome consequences** — bind validated completion/failure outcomes to bounded replayable fact/relationship consequences through existing event authorities, deterministic priority, and one-shot outcome provenance. **Complete.**
+34. **Objective-triggered scheduled world consequences** — allow validated objective outcomes to enqueue bounded replayable environmental consequences into the existing canonical world-event timeline. **Next.**
 
 ## Milestone 3 invariant
 
@@ -620,3 +621,42 @@ validated PlayerObjectiveCompleted / PlayerObjectiveFailed
 ```
 
 Outcome rules must not mutate canonical state directly. They should reuse existing typed event authorities, remain deterministic under replay, reject forged provenance, preserve hidden objective prerequisites, and retain provider-failure zero-commit semantics. Completion/failure consequences must have explicit ordering and bounded fan-out rather than recursively creating an unbounded rule engine.
+
+
+## Milestone 33 invariant
+
+Objective completion/failure consequences are declarative world policy, not quest-specific resolver branches:
+
+```text
+validated PlayerObjectiveCompleted / PlayerObjectiveFailed
+→ highest-priority matching ObjectiveOutcomeConsequenceRule
+→ optional ordinary FactDiscovered
+→ ordinary RelationshipChanged(rule_id=...)
+→ reducer revalidates terminal outcome / priority / participants / delta
+→ canonical one-shot applied-rule provenance
+→ player inference
+→ objective progression reconverges in the same turn
+→ one atomic commit / replay
+```
+
+Rule ids are globally non-overlapping across dialogue, item-turn-in, and objective-outcome relationship policies, so reducer routing is explicit rather than heuristic. A given objective + terminal outcome may be consumed only once: once the selected rule is applied, lower-priority sibling rules are no longer eligible.
+
+Optional reward facts still pass the existing discovery authority and can trigger ordinary player inference. The engine then reruns objective progression in a bounded fixed-point, so a reward fact may activate or complete downstream objectives in the same canonical turn without recursive unbounded rule execution.
+
+Focused regressions prove completion and failure outcomes, deterministic priority, lower-priority anti-forgery, pre-terminal forged consequence rejection, fact/relationship ordering, same-turn downstream objective convergence, SQLite persistence/replay equality, invalid world-data rejection, and provider-failure zero-commit behavior. The fully green implementation head `a063b598a893265857c45d2db97dfe7c6846ae15` passed wheel/browser packaging, Ruff, strict mypy, full pytest, the seeded 1,000-accepted-turn consistency evaluation and verifier, and the autonomy integration evaluation and verifier.
+
+## Promotion gate for Milestone 34
+
+Milestone 33 lets objective outcomes change facts and relationships immediately, but it deliberately does not create or mutate the future environmental event queue. The next coherent cross-subsystem slice should connect objective outcomes to the already established scheduled-world authority rather than embedding direct location-condition mutation into the consequence policy:
+
+```text
+validated objective terminal outcome
++ canonical scheduled-world consequence rule
+→ typed event queues a future location-condition activation
+→ existing deterministic world-event scheduler
+→ ScheduledLocationConditionApplied at due canonical minute
+→ existing expiry / traversal / route rules
+→ persistence / replay
+```
+
+The queueing transition must be typed and independently validated. It must reject duplicate schedule ids, missing locations, invalid route targets, past-due schedules, and forged objective provenance. Objective policy must never directly activate or remove environmental conditions. Queue fan-out must remain bounded, scheduling order deterministic, pending schedules hidden from player-facing state, and provider failure must preserve zero-partial-commit semantics.
