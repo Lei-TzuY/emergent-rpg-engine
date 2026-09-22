@@ -22,11 +22,14 @@ class WorldClock(BaseModel):
     day: int = Field(default=1, ge=1)
     minute_of_day: int = Field(default=8 * 60, ge=0, lt=24 * 60)
 
-    def advanced(self, minutes: int) -> WorldClock:
-        total = (self.day - 1) * 24 * 60 + self.minute_of_day + minutes
+    @classmethod
+    def from_absolute_minutes(cls, total: int) -> WorldClock:
         if total < 0:
             raise ValueError("world clock cannot go backward before day 1")
-        return WorldClock(day=(total // (24 * 60)) + 1, minute_of_day=total % (24 * 60))
+        return cls(day=(total // (24 * 60)) + 1, minute_of_day=total % (24 * 60))
+
+    def advanced(self, minutes: int) -> WorldClock:
+        return self.from_absolute_minutes(self.absolute_minutes + minutes)
 
     @property
     def absolute_minutes(self) -> int:
