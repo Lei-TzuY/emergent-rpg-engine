@@ -31,6 +31,7 @@ from emergent_rpg.domain.events import (
     WeaponEquipmentChanged,
 )
 from emergent_rpg.domain.models import NPC, Fact, Item, WorldState
+from emergent_rpg.engine.actionability import PlayerActionabilityPolicy
 from emergent_rpg.engine.combat import CombatPolicy
 from emergent_rpg.engine.dialogue import DialogueRelationshipPolicy
 from emergent_rpg.engine.environment import EnvironmentalRules
@@ -57,11 +58,12 @@ class DeterministicResolver:
         player = state.player()
         location_id = player.state.current_location
         location = state.locations[location_id]
-        incapacitated = any(s.incapacitating for s in player.state.status_conditions)
+
+        actionability_error = PlayerActionabilityPolicy.validate_action(state, action)
+        if actionability_error is not None:
+            return ActionResult(accepted=False, reason=actionability_error)
 
         if isinstance(action, MoveAction):
-            if incapacitated:
-                return ActionResult(accepted=False, reason="You cannot move while incapacitated.")
             destination = self._resolve_destination(state, location_id, action.destination)
             if destination is None:
                 return ActionResult(accepted=False, reason="There is no such exit from here.")
@@ -281,11 +283,6 @@ class DeterministicResolver:
             )
 
         if isinstance(action, EquipAction):
-            if incapacitated:
-                return ActionResult(
-                    accepted=False,
-                    reason="You cannot change equipment while incapacitated.",
-                )
             current_weapon_id = player.state.equipped_weapon_id
             if action.item is None:
                 if current_weapon_id is None:
@@ -343,11 +340,6 @@ class DeterministicResolver:
             )
 
         if isinstance(action, AttackAction):
-            if incapacitated:
-                return ActionResult(
-                    accepted=False,
-                    reason="You cannot attack while incapacitated.",
-                )
             attack_target = self._find_npc(state, action.target, location_id)
             if attack_target is None:
                 return ActionResult(
