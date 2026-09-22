@@ -219,13 +219,15 @@ def validate_state(
                     if expected_health[entity_id] == 0:
                         expected_alive[entity_id] = False
                         expected_conscious[entity_id] = False
-            elif isinstance(transition_event, CharacterHealed):
-                if transition_event.entity_id in expected_health:
-                    expected_health[transition_event.entity_id] = min(
-                        10,
-                        expected_health[transition_event.entity_id]
-                        + transition_event.amount,
-                    )
+            elif (
+                isinstance(transition_event, CharacterHealed)
+                and transition_event.entity_id in expected_health
+            ):
+                expected_health[transition_event.entity_id] = min(
+                    10,
+                    expected_health[transition_event.entity_id]
+                    + transition_event.amount,
+                )
         mismatched_health = [
             entity_id
             for entity_id, health in expected_health.items()
