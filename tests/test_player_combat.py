@@ -325,7 +325,7 @@ def test_browser_api_raw_text_attack_uses_same_combat_authority(tmp_path: Path) 
     assert state.player().state.stamina == (
         CombatPolicy.MAX_STAMINA - CombatPolicy.UNARMED_STAMINA_COST
     )
-    assert response.json()["state"]["health"] == 10
+    assert response.json()["state"]["health"] == 10 - CombatPolicy.UNARMED_DAMAGE
     assert response.json()["state"]["stamina"] == state.player().state.stamina
     persisted = store.load_events(session_id)
     damage = next(event for event in persisted if isinstance(event, CharacterDamaged))
