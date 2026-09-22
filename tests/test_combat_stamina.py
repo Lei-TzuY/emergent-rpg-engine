@@ -199,7 +199,10 @@ def test_forged_stamina_events_fail_closed_in_validator_and_reducer() -> None:
     )
     actor_report = validate_event_preconditions(state, wrong_actor)
     assert not actor_report.valid
-    assert "canonical player" in str(actor_report.issues)
+    assert "invalid_stamina_spend" in {
+        issue.code for issue in actor_report.issues
+    }
+    assert "retaliation" in str(actor_report.issues)
 
     recovery_state = build_demo_world()
     recovery_state.player().state.stamina = 5
