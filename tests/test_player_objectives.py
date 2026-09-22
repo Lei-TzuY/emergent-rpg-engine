@@ -3,8 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from typer.testing import CliRunner
 
 from emergent_rpg.api.models import project_player_state
+from emergent_rpg.cli.app import app
 from emergent_rpg.domain.actions import TakeAction
 from emergent_rpg.domain.events import (
     PlayerObjectiveActivated,
@@ -321,6 +323,34 @@ def test_provider_failure_does_not_commit_objective_progression(tmp_path: Path) 
     assert store.load_state(session.id) == before
     assert store.load_events(session.id) == []
     assert store.list_turns(session.id) == []
+
+
+def test_cli_status_shows_active_deadline_and_failed_objectives(tmp_path: Path) -> None:
+    db_path = tmp_path / "objective-cli.db"
+    store = SQLiteStore(db_path)
+    state = build_demo_world()
+    state.player_objectives = [
+        _objective(
+            "timed_active",
+            deadline_absolute_minute=state.clock.absolute_minutes + 30,
+        ),
+        _objective(
+            "already_failed",
+            deadline_absolute_minute=state.clock.absolute_minutes,
+        ),
+    ]
+    state.active_player_objective_ids = {"timed_active"}
+    state.failed_player_objective_ids = {"already_failed"}
+    session = _create_session(store, state)
+
+    result = CliRunner().invoke(
+        app,
+        ["status", session.id, "--db", str(db_path)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Timed Active (due Day 1, 08:30)" in result.output
+    assert "Failed objectives: Already Failed" in result.output
 
 
 def test_player_projection_hides_pending_objectives_and_prerequisites() -> None:
