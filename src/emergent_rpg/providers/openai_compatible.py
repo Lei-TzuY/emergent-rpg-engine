@@ -35,6 +35,8 @@ Convert the player's text into exactly one JSON object and nothing else. You may
 {"kind":"take","target":"..."}
 {"kind":"give","item":"...","receiver":"..."}
 {"kind":"attack","target":"..."}
+{"kind":"equip","item":"..."}
+{"kind":"equip","item":null}
 {"kind":"wait","minutes":10}
 {"kind":"freeform","text":"..."}
 Use only the visible interaction surface supplied by the engine. Never claim that an action is
@@ -267,6 +269,11 @@ def _visible_action_surface(state: WorldState) -> dict[str, object]:
         "location": location.name,
         "health": player.state.health,
         "stamina": player.state.stamina,
+        "equipped_weapon": (
+            state.items[player.state.equipped_weapon_id].name
+            if player.state.equipped_weapon_id is not None
+            else None
+        ),
         "exits": exits,
         "blocked_exits": blocked_exits,
         "visible_items": visible_items,
