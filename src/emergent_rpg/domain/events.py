@@ -156,6 +156,17 @@ class SimulationCycleProcessed(DomainEvent):
     scheduled_absolute_minute: int = Field(ge=0)
 
 
+class ScheduledLocationConditionQueued(DomainEvent):
+    type: Literal["scheduled_location_condition_queued"] = (
+        "scheduled_location_condition_queued"
+    )
+    rule_id: str
+    objective_id: str
+    outcome: Literal["completed", "failed"]
+    scheduled_event_id: str
+    due_absolute_minute: int = Field(ge=0)
+
+
 class ScheduledLocationConditionApplied(DomainEvent):
     type: Literal["scheduled_location_condition_applied"] = (
         "scheduled_location_condition_applied"
@@ -204,6 +215,7 @@ Event = Annotated[
     | RelationshipChanged
     | TimeAdvanced
     | SimulationCycleProcessed
+    | ScheduledLocationConditionQueued
     | ScheduledLocationConditionApplied
     | ScheduledLocationConditionExpired
     | StatusApplied,
