@@ -275,13 +275,13 @@ class DeterministicResolver:
                     accepted=False,
                     reason="You cannot attack while incapacitated.",
                 )
-            target = self._find_npc(state, action.target, location_id)
-            if target is None:
+            attack_target = self._find_npc(state, action.target, location_id)
+            if attack_target is None:
                 return ActionResult(
                     accepted=False,
                     reason="That person is not here to attack.",
                 )
-            if not target.state.alive or not target.state.conscious:
+            if not attack_target.state.alive or not attack_target.state.conscious:
                 return ActionResult(
                     accepted=False,
                     reason="They cannot be attacked in that state.",
@@ -290,7 +290,7 @@ class DeterministicResolver:
             events: list[Event] = [
                 CharacterDamaged(
                     turn_number=turn,
-                    entity_id=target.id,
+                    entity_id=attack_target.id,
                     amount=damage,
                     source_id=player.id,
                     cause="unarmed_attack",
@@ -300,14 +300,16 @@ class DeterministicResolver:
                     minutes=CombatPolicy.UNARMED_MINUTES,
                 ),
             ]
-            observations = [f"You strike {target.name} for {damage} damage."]
-            if target.state.health <= damage:
-                observations.append(f"{target.name} collapses.")
+            observations = [
+                f"You strike {attack_target.name} for {damage} damage."
+            ]
+            if attack_target.state.health <= damage:
+                observations.append(f"{attack_target.name} collapses.")
             return ActionResult(
                 accepted=True,
                 emitted_events=events,
                 observations=observations,
-                involved_entities={player.id, target.id},
+                involved_entities={player.id, attack_target.id},
                 tags={"combat", "attack"},
             )
 
