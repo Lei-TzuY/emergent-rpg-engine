@@ -4,37 +4,36 @@ This file is the compact current-phase status. Historical milestone invariants a
 
 ## Current checkpoint
 
-- Milestones 1–32: **Complete**.
-- Milestone 33 — **Data-driven objective outcome consequences**: **Complete**.
-- Milestone 34 — **Objective-triggered scheduled world consequences**: **Next**.
+- Milestones 1–34: **Complete**.
+- Milestone 35 — **Deterministic player combat / damage provenance**: **Next**.
 
-## Milestone 33 authority boundary
+## Milestone 34 authority boundary
 
-Objective terminal outcomes can now affect the wider canonical world without giving the objective policy direct mutation authority:
+Objective terminal outcomes can now schedule future environmental changes without creating a second environmental mutation path:
 
 ```text
 PlayerObjectiveCompleted / PlayerObjectiveFailed
-→ deterministic highest-priority outcome rule
-→ optional existing FactDiscovered authority
-→ existing RelationshipChanged authority
-→ canonical applied-rule provenance
-→ inference + objective reconvergence
-→ narration
-→ one atomic persistence / replay path
+→ deterministic highest-priority schedule rule
+→ ScheduledLocationConditionQueued
+→ canonical pending schedule
+→ existing world-event scheduler at due minute
+→ ScheduledLocationConditionApplied
+→ existing expiry / traversal / route rules
+→ persistence / replay
 ```
 
-Each objective + outcome can consume at most one consequence rule. Rule ids cannot overlap dialogue or item-turn-in relationship rules, so reducer validation always knows which policy owns a `RelationshipChanged(rule_id=...)` event. A forged consequence before the configured terminal outcome fails closed, and a lower-priority sibling cannot fire after the selected rule has consumed that outcome.
+The queue event carries exact objective, outcome, rule, scheduled-event id, and due-minute provenance. Validation rejects forged terminal provenance, wrong due times, duplicate pending ids, missing locations, invalid route targets, active/pending target conflicts, and lower-priority sibling rules after an outcome has been consumed.
 
-Reward facts remain subject to ordinary discovery prerequisites. Any resulting player inference is replayable, and the engine performs a bounded same-turn objective fixed-point so consequence facts can unlock downstream objectives immediately.
+Transition validation also protects the pending queue itself: a schedule cannot appear without a typed queue event, an existing pending schedule cannot be silently rewritten in place, and the canonical applied schedule-rule set must match queue-event provenance.
 
-Provider failure still occurs before persistence. Objective lifecycle events, outcome reward facts, relationship changes, inferred facts, applied-rule provenance, turns, and canonical state therefore remain uncommitted if narration fails.
+Objective policy never directly activates a location condition. Activation and expiry remain owned by the existing deterministic scheduler and environmental reducer. Pending scheduled consequences remain hidden from player-visible API/browser state until they actually become active.
 
-The fully green implementation head `a063b598a893265857c45d2db97dfe7c6846ae15` passed wheel/browser packaging, Ruff, strict mypy, full pytest, the seeded 1,000-turn consistency evaluation and verifier, and the autonomy integration evaluation and verifier.
+Provider failure still occurs before persistence, so queued consequences, objective events, canonical state, event log, and turn history remain unchanged on narration failure. The fully green implementation head `c397483943d05b871cb9bac27a413b85312e87c3` passed wheel/browser packaging, Ruff, strict mypy, full pytest, the seeded 1,000-turn consistency evaluation and verifier, and the autonomy integration evaluation and verifier.
 
-## Next frontier: Milestone 34
+## Next frontier: Milestone 35
 
-Milestone 33 supports immediate fact and relationship consequences but does not yet let an objective outcome schedule future environmental change. Milestone 34 should add a typed, replayable queueing path into the existing canonical scheduled-world timeline.
+The objective subsystem now spans replayable activation, completion/failure, immediate fact/relationship outcomes, and delayed scheduled-world effects. The next high-value architectural gap is combat.
 
-The objective consequence layer should emit a dedicated validated queue event carrying exact objective/rule/schedule provenance. Reduction may append a validated `ScheduledLocationCondition` entry, but actual activation must remain owned by the existing world-event scheduler at the configured canonical due minute. Duplicate ids, missing locations, invalid route targets, past-due schedules, and forged objective provenance must fail closed.
+The engine already models health, stamina, alive/conscious state, and `CharacterDamaged`, but players have no typed attack action and existing damage lacks attacker provenance. Milestone 35 should add a bounded deterministic player-combat vertical slice: local-target `AttackAction`, provenance-rich validated damage, reducer-owned health/death transitions, parser/provider/API/browser parity, persistence/replay, and provider-failure zero-commit behavior.
 
-This promotes quest outcomes from immediate social/knowledge effects to delayed world simulation while preserving one scheduler, one environmental authority, and one replayable event log.
+This should not become a placeholder “combat system.” The acceptance boundary is one executable, deterministic unarmed attack path with explicit legality and damage authority; richer weapons, armor, NPC retaliation, initiative, and combat AI can be promoted only after that base path is proven.
