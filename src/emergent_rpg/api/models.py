@@ -33,6 +33,7 @@ class PlayerObjectiveView(BaseModel):
     id: str
     title: str
     description: str
+    deadline: str | None = None
 
 
 class LocationConditionView(BaseModel):
@@ -63,6 +64,7 @@ class PlayerStateView(BaseModel):
     known_facts: list[KnownFact] = Field(default_factory=list)
     active_objectives: list[PlayerObjectiveView] = Field(default_factory=list)
     completed_objectives: list[PlayerObjectiveView] = Field(default_factory=list)
+    failed_objectives: list[PlayerObjectiveView] = Field(default_factory=list)
 
 
 class SessionView(BaseModel):
@@ -125,21 +127,32 @@ def project_player_state(state: WorldState) -> PlayerStateView:
         for fact_id in sorted(state.player_known_facts)
     ]
     objective_by_id = {objective.id: objective for objective in state.player_objectives}
-    active_objectives = [
-        PlayerObjectiveView(
+
+    def objective_view(objective_id: str) -> PlayerObjectiveView:
+        objective = objective_by_id[objective_id]
+        deadline = None
+        if objective.deadline_absolute_minute is not None:
+            day, minute_of_day = divmod(objective.deadline_absolute_minute, 24 * 60)
+            hour, minute = divmod(minute_of_day, 60)
+            deadline = f"Day {day + 1}, {hour:02d}:{minute:02d}"
+        return PlayerObjectiveView(
             id=objective_id,
-            title=objective_by_id[objective_id].title,
-            description=objective_by_id[objective_id].description,
+            title=objective.title,
+            description=objective.description,
+            deadline=deadline,
         )
+
+    active_objectives = [
+        objective_view(objective_id)
         for objective_id in sorted(state.active_player_objective_ids)
     ]
     completed_objectives = [
-        PlayerObjectiveView(
-            id=objective_id,
-            title=objective_by_id[objective_id].title,
-            description=objective_by_id[objective_id].description,
-        )
+        objective_view(objective_id)
         for objective_id in sorted(state.completed_player_objective_ids)
+    ]
+    failed_objectives = [
+        objective_view(objective_id)
+        for objective_id in sorted(state.failed_player_objective_ids)
     ]
     conditions = [
         LocationConditionView(
@@ -181,4 +194,5 @@ def project_player_state(state: WorldState) -> PlayerStateView:
         known_facts=known_facts,
         active_objectives=active_objectives,
         completed_objectives=completed_objectives,
+        failed_objectives=failed_objectives,
     )
