@@ -1,39 +1,42 @@
 # Project status
 
-This file is the compact current-phase status. Historical milestone invariants and evidence remain in `docs/ROADMAP.md` and the milestone-specific documents.
+This file is the compact current-phase status. Historical milestone invariants and evidence remain in `docs/ROADMAP.md` and milestone-specific documents.
 
 ## Current checkpoint
 
-- Milestones 1–26: **Complete** on merged `main`.
-- Milestone 27 — **Autonomous NPC item acquisition / custody**: **Complete candidate** on PR #28; executable head `2e67bb2b132c6a67fb3d56b67f866dd3df308312` passed the full verification gate.
-- Milestone 28 — **Replayable item handoff / delivery goals**: **Next** after Milestone 27 final docs-head CI, merge gate, and merged-main CI are green.
+- Milestones 1–30: **Complete**.
+- Milestone 31 — **Replayable player objective progression**: **Complete**.
+- Milestone 32 — **Replayable player objective deadlines / failure lifecycle**: **Complete**.
+- Milestone 33 — **Data-driven objective outcome consequences**: **Next**.
 
-## Milestone 27 authority boundary
+## Milestone 32 authority boundary
 
-NPC item acquisition extends existing custody semantics instead of creating a parallel inventory subsystem:
+Objective failure is canonical lifecycle state, not a side effect of prose or a wall-clock timer:
 
 ```text
-knowledge-gated acquire_item goal
-+ NPC own item-location belief / known routes / local visibility
-→ deterministic planner
-→ movement / stale local search / NPCAcquireIntent
-→ deterministic resolver
-→ existing ItemAcquired
-→ observer-scoped item-memory cleanup
-→ NPCGoalCompleted(method="acquired_item")
-→ persistence / replay
+accepted player action
+→ canonical TimeAdvanced / ordinary player events
+→ deterministic objective fixed-point
+→ activate eligible objectives
+→ complete every earned objective
+→ fail remaining due objectives
+→ typed lifecycle validation / reduction
+→ narration
+→ one atomic commit / replay
 ```
 
-The planner never receives authoritative remote item location. The existing `ItemAcquired` event remains the only acquisition mutation path for player and NPC actors. Generic event validation independently requires an existing alive/conscious actor, local unowned portable target, and matching event origin. Acquisition completion is accepted only when canonical item ownership and NPC inventory agree.
+The fixed-point gives completion precedence when completion and deadline coincide. A downstream objective that becomes activation-ready because another objective completes in the same turn receives another activation/completion pass before deadline failure can terminate it.
 
-The implementation also preserves the older Milestone 19 investigate-item rejection contract. A full-suite regression caught generalized error text that changed existing deterministic behavior; production was corrected rather than weakening the test.
+`PlayerObjectiveFailed` is independently validated against canonical objective configuration and world time. Reducer-owned active/completed/failed sets are mutually exclusive, and transition validation reconstructs their expected state from lifecycle events so direct mutation fails closed.
 
-The fully green M27 implementation head `2e67bb2b132c6a67fb3d56b67f866dd3df308312` passed wheel/package verification, Ruff, strict mypy across **47 source files**, **175 pytest tests**, the seeded 1,000-accepted-turn evaluation, and JSON report verification. The long-run report produced 1,058 submissions / 1,000 accepted / 58 rejected / 2,274 events / final clock 4,361 with every tracked invariant true and `failures=[]`.
+Active objectives expose their public deadline through CLI/API/browser. Completed and failed objectives are also player-visible, while pending objective definitions and prerequisite ids remain hidden.
 
-See `docs/NPC_ITEM_ACQUISITION.md` for focused authority and verification details.
+The implementation preserves provider-failure atomicity: narration failure occurs before persistence, so deadline-triggered lifecycle events, canonical state, event log, and turn history remain unchanged.
 
-## Next frontier: Milestone 28
+## Next frontier: Milestone 33
 
-Milestone 27 can acquire an unowned ground item but deliberately rejects transfer from an existing owner. The next coherent slice should add replayable owner-to-owner item handoff / delivery goals without creating a second custody store.
+Objective outcomes now have deterministic truth but do not yet provide a generic way to alter the wider world. Milestone 33 should add **data-driven objective outcome consequences**.
 
-A delivery-capable NPC must canonically possess the item, reach or share a location with the intended receiver, and transfer through a typed event carrying exact source/receiver/item provenance. Validation must reject remote transfer, inactive participants, source-without-item, wrong receiver, and duplicate ownership. Reduction must atomically move the unique item between inventories, while observer item-location beliefs remain scoped rather than globally synchronized. Explicit/off-screen execution, SQLite restart/replay, and the existing 1,000-turn consistency gate must remain green.
+A canonical rule should match a validated `PlayerObjectiveCompleted` or `PlayerObjectiveFailed` outcome and emit only bounded consequences through existing typed authorities such as fact discovery, relationship change, or scheduled world events. Rules need deterministic ordering, one-shot provenance, forged-event backstops, persistence/replay equality, hidden-prerequisite safety, and provider-failure zero-commit behavior.
+
+The goal is to make quest outcomes causally affect the world without creating a second mutation engine or embedding named quest branches in generic runtime code.
