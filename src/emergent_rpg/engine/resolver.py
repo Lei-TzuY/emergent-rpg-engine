@@ -15,6 +15,8 @@ from emergent_rpg.domain.actions import (
 )
 from emergent_rpg.domain.events import (
     CharacterDamaged,
+    CharacterStaminaRecovered,
+    CharacterStaminaSpent,
     Event,
     FactDiscovered,
     ItemAcquired,
@@ -286,22 +288,39 @@ class DeterministicResolver:
                     accepted=False,
                     reason="They cannot be attacked in that state.",
                 )
+            if player.state.stamina < CombatPolicy.UNARMED_STAMINA_COST:
+                return ActionResult(
+                    accepted=False,
+                    reason="You do not have enough stamina to attack.",
+                )
             damage = CombatPolicy.UNARMED_DAMAGE
+            spend_event = CharacterStaminaSpent(
+                turn_number=turn,
+                entity_id=player.id,
+                amount=CombatPolicy.UNARMED_STAMINA_COST,
+                reason="unarmed_attack",
+                target_id=attack_target.id,
+            )
             events: list[Event] = [
+                spend_event,
                 CharacterDamaged(
                     turn_number=turn,
                     entity_id=attack_target.id,
                     amount=damage,
                     source_id=player.id,
                     cause="unarmed_attack",
+                    stamina_spend_event_id=spend_event.event_id,
+                    stamina_cost=CombatPolicy.UNARMED_STAMINA_COST,
                 ),
                 TimeAdvanced(
                     turn_number=turn,
                     minutes=CombatPolicy.UNARMED_MINUTES,
+                    cause="combat",
                 ),
             ]
             observations = [
-                f"You strike {attack_target.name} for {damage} damage."
+                f"You strike {attack_target.name} for {damage} damage.",
+                f"You spend {CombatPolicy.UNARMED_STAMINA_COST} stamina.",
             ]
             if attack_target.state.health <= damage:
                 observations.append(f"{attack_target.name} collapses.")
@@ -366,10 +385,31 @@ class DeterministicResolver:
             )
 
         if isinstance(action, WaitAction):
+            events: list[Event] = []
+            observations = [f"You wait for {action.minutes} minutes."]
+            recovery = CombatPolicy.expected_wait_recovery(state, action.minutes)
+            if recovery > 0:
+                events.append(
+                    CharacterStaminaRecovered(
+                        turn_number=turn,
+                        entity_id=player.id,
+                        amount=recovery,
+                        reason="wait",
+                        wait_minutes=action.minutes,
+                    )
+                )
+                observations.append(f"You recover {recovery} stamina.")
+            events.append(
+                TimeAdvanced(
+                    turn_number=turn,
+                    minutes=action.minutes,
+                    cause="wait",
+                )
+            )
             return ActionResult(
                 accepted=True,
-                emitted_events=[TimeAdvanced(turn_number=turn, minutes=action.minutes)],
-                observations=[f"You wait for {action.minutes} minutes."],
+                emitted_events=events,
+                observations=observations,
                 involved_entities={player.id},
                 tags={"waiting"},
             )

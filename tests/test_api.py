@@ -44,6 +44,8 @@ def test_create_and_read_session_exposes_only_player_visible_state(tmp_path: Pat
     assert response.status_code == 200
     body = response.json()
     assert body["state"]["location_name"] == "Ashfall Yard"
+    assert body["state"]["health"] == 10
+    assert body["state"]["stamina"] == 10
     assert body["state"]["known_facts"] == []
     wire = response.text
     assert "02:13" not in wire

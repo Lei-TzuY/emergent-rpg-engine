@@ -7,6 +7,8 @@ from typing import Literal
 from emergent_rpg.domain.events import (
     CharacterDamaged,
     CharacterHealed,
+    CharacterStaminaRecovered,
+    CharacterStaminaSpent,
     Event,
     FactDiscovered,
     FactInferred,
@@ -256,6 +258,100 @@ def validate_state(
                 "character alive/conscious state does not match damage event provenance: "
                 f"{sorted(mismatched_life_state)}",
             )
+
+        expected_stamina = {
+            entity_id: entity.state.stamina
+            for entity_id, entity in previous.entities.items()
+        }
+        pending_attack_spends: dict[str, CharacterStaminaSpent] = {}
+        combat_damage_turns: Counter[int] = Counter()
+        combat_time_turns: Counter[int] = Counter()
+        wait_recovery_keys: Counter[tuple[int, int]] = Counter()
+        wait_time_keys: Counter[tuple[int, int]] = Counter()
+
+        for transition_event in transition_events or []:
+            if isinstance(transition_event, CharacterStaminaSpent):
+                if transition_event.entity_id in expected_stamina:
+                    expected_stamina[transition_event.entity_id] = max(
+                        0,
+                        expected_stamina[transition_event.entity_id]
+                        - transition_event.amount,
+                    )
+                pending_attack_spends[transition_event.event_id] = transition_event
+            elif isinstance(transition_event, CharacterStaminaRecovered):
+                if transition_event.entity_id in expected_stamina:
+                    expected_stamina[transition_event.entity_id] = min(
+                        CombatPolicy.MAX_STAMINA,
+                        expected_stamina[transition_event.entity_id]
+                        + transition_event.amount,
+                    )
+                wait_recovery_keys[
+                    (transition_event.turn_number, transition_event.wait_minutes)
+                ] += 1
+            elif (
+                isinstance(transition_event, CharacterDamaged)
+                and transition_event.cause == "unarmed_attack"
+                and transition_event.stamina_spend_event_id is not None
+            ):
+                spend = pending_attack_spends.pop(
+                    transition_event.stamina_spend_event_id,
+                    None,
+                )
+                if (
+                    spend is None
+                    or transition_event.source_id != spend.entity_id
+                    or transition_event.entity_id != spend.target_id
+                    or transition_event.turn_number != spend.turn_number
+                    or transition_event.stamina_cost != spend.amount
+                ):
+                    report.add_error(
+                        "combat_damage_without_stamina_spend",
+                        "unarmed damage lacks its exact prior stamina spend provenance",
+                    )
+                combat_damage_turns[transition_event.turn_number] += 1
+            elif isinstance(transition_event, TimeAdvanced):
+                if (
+                    transition_event.cause == "combat"
+                    and transition_event.minutes == CombatPolicy.UNARMED_MINUTES
+                ):
+                    combat_time_turns[transition_event.turn_number] += 1
+                elif transition_event.cause == "wait":
+                    wait_time_keys[
+                        (transition_event.turn_number, transition_event.minutes)
+                    ] += 1
+
+        if pending_attack_spends:
+            report.add_error(
+                "combat_stamina_spend_without_damage",
+                "unarmed stamina spend lacks matching damage provenance",
+            )
+        if combat_damage_turns != combat_time_turns:
+            report.add_error(
+                "combat_time_provenance_mismatch",
+                "unarmed damage does not match combat time provenance",
+            )
+        unmatched_recoveries = sum(
+            max(0, count - wait_time_keys[key])
+            for key, count in wait_recovery_keys.items()
+        )
+        if unmatched_recoveries:
+            report.add_error(
+                "stamina_recovery_without_wait",
+                "stamina recovery does not match wait time provenance",
+            )
+
+        mismatched_stamina = [
+            entity_id
+            for entity_id, stamina in expected_stamina.items()
+            if entity_id in state.entities
+            and state.entities[entity_id].state.stamina != stamina
+        ]
+        if mismatched_stamina:
+            report.add_error(
+                "character_stamina_changed_without_event",
+                "character stamina does not match spend/recovery event provenance: "
+                f"{sorted(mismatched_stamina)}",
+            )
         if (
             state.simulation.next_due_absolute_minute
             < previous.simulation.next_due_absolute_minute
@@ -469,12 +565,29 @@ def validate_event_preconditions(state: WorldState, event: Event) -> ValidationR
             report.add_error("nonexistent_entity", f"missing heal target {event.entity_id}")
         elif not state.entities[event.entity_id].state.alive:
             report.add_error("impossible_resurrection", "cannot heal a dead character back to life")
+    elif isinstance(event, CharacterStaminaSpent):
+        reason = CombatPolicy.validate_stamina_spend_event(state, event)
+        if reason is not None:
+            report.add_error("invalid_stamina_spend", reason)
+    elif isinstance(event, CharacterStaminaRecovered):
+        reason = CombatPolicy.validate_stamina_recovery_event(state, event)
+        if reason is not None:
+            report.add_error("invalid_stamina_recovery", reason)
     elif isinstance(event, FactDiscovered):
         _validate_discovery_event(state, event, report)
     elif isinstance(event, FactInferred):
         _validate_inference_event(state, event, report)
-    elif isinstance(event, TimeAdvanced) and event.minutes <= 0:
-        report.add_error("time_went_backward", "time advance must be positive")
+    elif isinstance(event, TimeAdvanced):
+        if event.minutes <= 0:
+            report.add_error("time_went_backward", "time advance must be positive")
+        if (
+            event.cause == "combat"
+            and event.minutes != CombatPolicy.UNARMED_MINUTES
+        ):
+            report.add_error(
+                "invalid_combat_time",
+                f"combat time must equal {CombatPolicy.UNARMED_MINUTES}",
+            )
     elif isinstance(event, SimulationCycleProcessed):
         expected = state.simulation.next_due_absolute_minute
         if event.scheduled_absolute_minute != expected:

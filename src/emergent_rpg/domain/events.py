@@ -112,12 +112,30 @@ class CharacterDamaged(DomainEvent):
     amount: int = Field(gt=0)
     source_id: str | None = None
     cause: Literal["other", "unarmed_attack"] = "other"
+    stamina_spend_event_id: str | None = None
+    stamina_cost: int | None = Field(default=None, gt=0)
 
 
 class CharacterHealed(DomainEvent):
     type: Literal["character_healed"] = "character_healed"
     entity_id: str
     amount: int = Field(gt=0)
+
+
+class CharacterStaminaSpent(DomainEvent):
+    type: Literal["character_stamina_spent"] = "character_stamina_spent"
+    entity_id: str
+    amount: int = Field(gt=0)
+    reason: Literal["unarmed_attack"]
+    target_id: str
+
+
+class CharacterStaminaRecovered(DomainEvent):
+    type: Literal["character_stamina_recovered"] = "character_stamina_recovered"
+    entity_id: str
+    amount: int = Field(gt=0)
+    reason: Literal["wait"]
+    wait_minutes: int = Field(ge=1, le=24 * 60)
 
 
 class FactDiscovered(DomainEvent):
@@ -151,6 +169,7 @@ class RelationshipChanged(DomainEvent):
 class TimeAdvanced(DomainEvent):
     type: Literal["time_advanced"] = "time_advanced"
     minutes: int = Field(gt=0)
+    cause: Literal["other", "wait", "combat"] = "other"
 
 
 class SimulationCycleProcessed(DomainEvent):
@@ -211,6 +230,8 @@ Event = Annotated[
     | ItemDropped
     | CharacterDamaged
     | CharacterHealed
+    | CharacterStaminaSpent
+    | CharacterStaminaRecovered
     | FactDiscovered
     | FactInferred
     | NPCLearnedFact

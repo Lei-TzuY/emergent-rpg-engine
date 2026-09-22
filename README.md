@@ -195,7 +195,7 @@ CI runs all three checks on Python 3.12, builds the wheel, verifies packaged bro
 
 ## Current limitations
 
-Basic deterministic unarmed player combat now exists with provenance-rich validated damage and replayable lethal state transitions. Combat stamina expenditure/recovery, weapons and armor, NPC retaliation, initiative, and broader combat AI remain future work. Authentication/multi-user API concerns and neural embedding integration also remain future work.
+Basic deterministic unarmed player combat now includes replayable stamina expenditure/recovery, provenance-linked damage, player-visible health/stamina, and lethal state transitions. NPC retaliation, initiative, weapons and armor, and broader combat AI remain future work. Authentication/multi-user API concerns and neural embedding integration also remain future work.
 
 The OpenAI-compatible provider currently targets the common `/chat/completions` JSON shape and intentionally supports text responses only. Live endpoint interoperability depends on the selected server/model and is not claimed by offline CI.
 

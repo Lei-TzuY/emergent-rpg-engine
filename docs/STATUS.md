@@ -4,37 +4,42 @@ This file is the compact current-phase status. Historical milestone invariants a
 
 ## Current checkpoint
 
-- Milestones 1–35: **Complete**.
-- Milestone 36 — **Replayable combat stamina economy / rest recovery**: **Next**.
+- Milestones 1–36: **Complete**.
+- Milestone 37 — **Actor-symmetric bounded NPC retaliation**: **Next**.
 
-## Milestone 35 authority boundary
+## Milestone 36 authority boundary
 
-Player combat now has one executable deterministic vertical slice:
+Stamina is now canonical executable state with typed provenance:
 
 ```text
-visible local NPC target
-→ AttackAction
-→ deterministic resolver
-→ provenance-rich CharacterDamaged
-→ generic validator + reducer revalidation
-→ canonical health / lethal life-state transition
-→ TimeAdvanced
-→ narration
+AttackAction
+→ CharacterStaminaSpent
+→ provenance-linked CharacterDamaged
+→ TimeAdvanced(cause=combat)
+→ transition validation
+→ atomic persistence / replay
+
+WaitAction
+→ bounded CharacterStaminaRecovered when below max
+→ TimeAdvanced(cause=wait)
+→ transition validation
 → atomic persistence / replay
 ```
 
-For `cause="unarmed_attack"`, the damage source must be the canonical player, source/target must be distinct active co-located entities, and the amount must equal `CombatPolicy.UNARMED_DAMAGE`. The provider/parser can propose the target but cannot choose damage.
+An unarmed player attack costs exactly `CombatPolicy.UNARMED_STAMINA_COST`. The spend event identifies the canonical player and exact target; the damage event links back to that spend's event id and repeats the cost. Validator and reducer independently enforce actor, target, co-location, liveness/consciousness, fixed damage/cost, and affordability. Whole-transition validation reconstructs stamina and rejects missing/mismatched spend↔damage, combat-time, or wait↔recovery provenance.
 
-Health and lethal `alive/conscious` transitions are checked again at whole-transition validation time. Direct state mutation without matching damage/healing event provenance fails closed. Lethal narration keeps the struck target in event/scene evidence while allowing inactivity only when the entity was active before the turn and became inactive during that accepted transition; stale inactive participants remain rejected.
+Wait recovery is deterministic and bounded by both elapsed wait minutes and the canonical stamina maximum. Waiting at full stamina emits no fake zero-value recovery event.
 
-The implementation preserves the pre-existing serialized `CharacterDamaged` shape by defaulting absent provenance to `source_id=None` and `cause="other"`, so old replay data remains readable while the new player-combat path is strictly validated.
+M35 event logs remain replayable: an older `CharacterDamaged(cause="unarmed_attack")` with both stamina provenance fields absent uses the pre-stamina compatibility path. New M36 attacks always carry both fields; partial provenance is invalid.
 
-The fully green implementation head `07d76ea56a4c985549241f03f910b2de21d6bd14` passed wheel/browser packaging, Ruff, strict mypy, **281 pytest tests**, the seeded 1,000-turn consistency evaluation and verifier (1,058 submissions / 1,000 accepted / `failures=[]`), and the autonomy/custody/social integration evaluation and verifier.
+Health and stamina are now exposed in API, CLI, browser UI, and the structured action parser's visible state. Provider failure remains zero-commit across stamina, damage, time, state, events, and turn history.
 
-## Next frontier: Milestone 36
+The fully green implementation head `cec776e0c850d43c0d2d6e14f92fc970c1b84e1e` passed wheel/browser packaging, Ruff, strict mypy, **292 pytest tests**, the seeded 1,000-turn consistency evaluation and verifier (**1,058 submissions / 1,000 accepted / failures=[]**), and the autonomy/custody/social evaluation and verifier with `failures=[]`.
 
-Combat damage exists, but stamina is still canonical data with no executable authority. Milestone 36 should make it a replayable action-economy resource before expanding combat AI.
+## Next frontier: Milestone 37
 
-An unarmed attack should require sufficient canonical stamina and emit a typed stamina-spend event before damage. Explicit rest/wait should recover stamina through a typed bounded recovery event. Validator/reducer/transition provenance must reject forged amounts, overspend, over-recovery, direct stamina mutation, and wrong actor/reason combinations. Provider failure must keep both stamina and damage zero-commit.
+The next combat milestone should prove actor symmetry with one bounded deterministic NPC retaliation after a surviving legal player attack.
 
-Because stamina will affect action legality, player-facing CLI/API/browser state should expose health and stamina. NPC retaliation, initiative, weapons/armor, and combat AI should remain outside this phase and be promoted only after the resource authority is proven.
+A retaliating NPC should spend its own canonical stamina and damage the player through the same provenance-rich authority, with at most one retaliation per player attack. Dead, unconscious, remote, incapacitated, or exhausted NPCs must not retaliate. Retaliation must be engine policy, not provider prose.
+
+This phase should not expand into weapons, armor, generic initiative rounds, arbitrary aggression goals, hit chance, or broad combat AI. Those become later promotions only after symmetric retaliation is replayably proven.

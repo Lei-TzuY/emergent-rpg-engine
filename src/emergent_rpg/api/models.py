@@ -53,6 +53,8 @@ class BlockedExitView(BaseModel):
 class PlayerStateView(BaseModel):
     turn_number: int
     time: str
+    health: int
+    stamina: int
     location_id: str
     location_name: str
     exits: dict[str, str]
@@ -183,6 +185,8 @@ def project_player_state(state: WorldState) -> PlayerStateView:
     return PlayerStateView(
         turn_number=state.turn_number,
         time=state.clock.display(),
+        health=player.state.health,
+        stamina=player.state.stamina,
         location_id=location.id,
         location_name=location.name,
         exits=exits,

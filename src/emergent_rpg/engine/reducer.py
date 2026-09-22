@@ -3,6 +3,8 @@ from __future__ import annotations
 from emergent_rpg.domain.events import (
     CharacterDamaged,
     CharacterHealed,
+    CharacterStaminaRecovered,
+    CharacterStaminaSpent,
     Event,
     FactDiscovered,
     FactInferred,
@@ -201,6 +203,21 @@ def apply_event(state: WorldState, event: Event) -> WorldState:
         if not char.alive:
             raise ReductionError("healing cannot resurrect a dead character")
         char.health = min(10, char.health + event.amount)
+    elif isinstance(event, CharacterStaminaSpent):
+        stamina_error = CombatPolicy.validate_stamina_spend_event(new_state, event)
+        if stamina_error is not None:
+            raise ReductionError(stamina_error)
+        char = new_state.entities[event.entity_id].state
+        char.stamina -= event.amount
+    elif isinstance(event, CharacterStaminaRecovered):
+        stamina_error = CombatPolicy.validate_stamina_recovery_event(new_state, event)
+        if stamina_error is not None:
+            raise ReductionError(stamina_error)
+        char = new_state.entities[event.entity_id].state
+        char.stamina = min(
+            CombatPolicy.MAX_STAMINA,
+            char.stamina + event.amount,
+        )
     elif isinstance(event, (FactDiscovered, FactInferred)):
         if event.observer_id == new_state.player_id:
             new_state.player_known_facts.add(event.fact_id)
