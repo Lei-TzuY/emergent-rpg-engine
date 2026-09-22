@@ -301,17 +301,18 @@ class DeterministicResolver:
                 reason="unarmed_attack",
                 target_id=attack_target.id,
             )
+            player_damage_event = CharacterDamaged(
+                turn_number=turn,
+                entity_id=attack_target.id,
+                amount=damage,
+                source_id=player.id,
+                cause="unarmed_attack",
+                stamina_spend_event_id=spend_event.event_id,
+                stamina_cost=CombatPolicy.UNARMED_STAMINA_COST,
+            )
             events: list[Event] = [
                 spend_event,
-                CharacterDamaged(
-                    turn_number=turn,
-                    entity_id=attack_target.id,
-                    amount=damage,
-                    source_id=player.id,
-                    cause="unarmed_attack",
-                    stamina_spend_event_id=spend_event.event_id,
-                    stamina_cost=CombatPolicy.UNARMED_STAMINA_COST,
-                ),
+                player_damage_event,
                 TimeAdvanced(
                     turn_number=turn,
                     minutes=CombatPolicy.UNARMED_MINUTES,
@@ -324,6 +325,48 @@ class DeterministicResolver:
             ]
             if attack_target.state.health <= damage:
                 observations.append(f"{attack_target.name} collapses.")
+            elif CombatPolicy.retaliation_eligible_after_player_damage(
+                state,
+                attack_target.id,
+                damage,
+            ):
+                retaliation_spend = CharacterStaminaSpent(
+                    turn_number=turn,
+                    entity_id=attack_target.id,
+                    amount=CombatPolicy.UNARMED_STAMINA_COST,
+                    reason="retaliation",
+                    target_id=player.id,
+                    trigger_damage_event_id=player_damage_event.event_id,
+                )
+                events.extend(
+                    [
+                        retaliation_spend,
+                        CharacterDamaged(
+                            turn_number=turn,
+                            entity_id=player.id,
+                            amount=damage,
+                            source_id=attack_target.id,
+                            cause="unarmed_attack",
+                            stamina_spend_event_id=retaliation_spend.event_id,
+                            stamina_cost=CombatPolicy.UNARMED_STAMINA_COST,
+                            retaliation_trigger_event_id=player_damage_event.event_id,
+                        ),
+                        TimeAdvanced(
+                            turn_number=turn,
+                            minutes=CombatPolicy.UNARMED_MINUTES,
+                            cause="combat",
+                        ),
+                    ]
+                )
+                observations.extend(
+                    [
+                        f"{attack_target.name} retaliates for {damage} damage.",
+                        (
+                            f"{attack_target.name} spends "
+                            f"{CombatPolicy.UNARMED_STAMINA_COST} stamina."
+                        ),
+                    ]
+                )
             return ActionResult(
                 accepted=True,
                 emitted_events=events,
