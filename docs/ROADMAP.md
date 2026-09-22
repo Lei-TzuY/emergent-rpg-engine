@@ -38,7 +38,8 @@ The project advances by coherent executable slices rather than placeholder subsy
 34. **Objective-triggered scheduled world consequences** — allow validated objective outcomes to enqueue bounded replayable environmental consequences into the existing canonical world-event timeline. **Complete.**
 35. **Deterministic player combat / damage provenance** — add a typed player attack action and provenance-rich validated damage authority across parser/resolver/reducer/API/browser paths without allowing prose to decide damage. **Complete.**
 36. **Replayable combat stamina economy / rest recovery** — make canonical stamina an executable resource with typed spend/recovery provenance, attack affordability, player-visible resource projection, and deterministic rest recovery. **Complete.**
-37. **Actor-symmetric bounded NPC retaliation** — let a surviving local NPC perform at most one deterministic retaliatory unarmed strike through shared stamina/damage provenance rather than a separate combat mutation path. **Next.**
+37. **Actor-symmetric bounded NPC retaliation** — let a surviving local NPC perform at most one deterministic retaliatory unarmed strike through shared stamina/damage provenance rather than a separate combat mutation path. **Complete.**
+38. **Data-driven weapon profiles / equipment authority** — add canonical weapon stats and a typed equip path so attacks can derive bounded damage/stamina cost from owned equipment instead of hard-coded fists. **Next.**
 
 ## Milestone 3 invariant
 
@@ -811,3 +812,56 @@ accepted player unarmed attack
 ```
 
 NPC retaliation must reuse the same canonical stamina and health stores, not add NPC-only combat state. Retaliation needs exact NPC source/target/spend provenance, co-location, liveness/consciousness, affordability, fixed bounded damage, and one-response-per-trigger semantics. A killed/incapacitated/exhausted target cannot retaliate. The player provider must not decide whether retaliation occurs. Initiative rounds, arbitrary NPC aggression goals, weapons/armor, hit chance, and combat AI remain later promotions.
+
+
+## Milestone 37 invariant
+
+A legal player unarmed attack may now cause exactly one deterministic NPC retaliation through the same canonical combat authority:
+
+```text
+player CharacterStaminaSpent
+→ player CharacterDamaged(target = NPC)
+→ combat time
+→ if target survives, is conscious, non-incapacitated, co-located, and funded:
+     NPC CharacterStaminaSpent(
+       reason = retaliation,
+       trigger_damage_event_id = exact player damage id
+     )
+   → NPC CharacterDamaged(
+       target = canonical player,
+       stamina_spend_event_id = exact NPC spend id,
+       retaliation_trigger_event_id = exact player damage id
+     )
+   → combat time
+→ whole-transition provenance validation
+→ atomic persistence / replay
+```
+
+Combat validation is actor-symmetric only inside the explicit role boundaries. A normal `unarmed_attack` spend still belongs to the canonical player and targets an NPC. An NPC spend must use `reason="retaliation"`, target the canonical player, and carry a trigger damage id. NPC retaliation damage must be stamina-funded, target the canonical player, and carry the same trigger id.
+
+Whole-transition validation records player damage events as retaliation authorities, rejects retaliation spends that do not reference an earlier matching player hit, binds retaliation damage to both its exact spend and its exact player-damage trigger, and consumes each trigger at most once. A second retaliation against the same trigger therefore fails even when the NPC still has stamina. Killed, unconscious, incapacitated, remote, or exhausted targets never receive a retaliation event.
+
+Retaliation remains deterministic engine policy rather than a provider choice. The provider still proposes only the player's `AttackAction`; the resolver decides whether the struck target is eligible to respond. Both player and NPC spend the same canonical stamina cost and deal the same bounded unarmed damage. Lethal retaliation against the player uses the existing health/life-state reducer and transition-aware narration path, and provider/narration failure remains zero-commit for the entire exchange.
+
+Focused coverage proves the exact six-event exchange, shared player/NPC health and stamina mutation, killed/exhausted/incapacitated no-retaliation gates, forged trigger rejection, duplicate-trigger rejection, persistence/replay equality, lethal player retaliation narration, and preservation of the isolated M36 player-only path. The fully green implementation head `3f6f70a34bf5a503028ddf771a2f3f357564ca76` passed wheel/browser packaging, Ruff, strict mypy across 62 source files, **298 pytest tests**, the seeded 1,000-accepted-turn consistency evaluation (**1,058 submitted / 1,000 accepted / failures=[] / passed=true**) and verifier, plus the autonomy/custody/social integration evaluation and verifier with `failures=[]`.
+
+## Promotion gate for Milestone 38
+
+Milestones 35–37 now prove deterministic damage, stamina, and bounded opponent response. The next architectural gap is that every attack still derives damage/cost from hard-coded unarmed constants while canonical inventory has no explicit combat semantics.
+
+Milestone 38 should add a data-driven weapon/equipment vertical slice rather than encoding combat numbers in ad-hoc item flags:
+
+```text
+canonical Item.weapon profile
++ owned item
+→ typed EquipAction
+→ validated equipment event/state
+→ AttackAction
+→ equipped weapon determines bounded damage + stamina cost
+→ provenance-rich spend/damage events carry weapon identity
+→ shared reducer / transition validation
+→ retaliation remains bounded under the same authority
+→ persistence / replay
+```
+
+A weapon profile should be explicit structured world-pack data with bounded damage/stamina values. Equipping must require canonical ownership and typed event provenance; direct equipped-state mutation must fail closed. Damage provenance must identify the weapon used so reducer/transition validation can re-derive the exact legal numbers. Unarmed attack remains the fallback when no weapon is equipped. This phase should not add armor, hit chance, random rolls, durability, arbitrary loot generation, or generic combat AI.
