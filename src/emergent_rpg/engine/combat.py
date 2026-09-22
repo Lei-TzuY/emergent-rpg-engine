@@ -30,6 +30,8 @@ class CombatPolicy:
         source = state.entities.get(event.source_id)
         if source is None:
             return f"damage source {event.source_id} does not exist"
+        if source.id != state.player_id:
+            return "unarmed attack source must be the canonical player"
         if source.id == target.id:
             return "unarmed attack source and target must differ"
         if not source.state.alive or not source.state.conscious:
