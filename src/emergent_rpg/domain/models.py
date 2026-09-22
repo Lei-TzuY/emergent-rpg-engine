@@ -169,6 +169,7 @@ class PlayerObjective(BaseModel):
     id: str = Field(min_length=1)
     title: str = Field(min_length=1)
     description: str = Field(min_length=1)
+    deadline_absolute_minute: int | None = Field(default=None, ge=0)
     activation_required_fact_ids: set[FactId] = Field(default_factory=set)
     activation_required_item_ids: set[ItemId] = Field(default_factory=set)
     activation_required_turn_in_rule_ids: set[str] = Field(default_factory=set)
@@ -307,6 +308,7 @@ class WorldState(BaseModel):
     player_objectives: list[PlayerObjective] = Field(default_factory=list)
     active_player_objective_ids: set[str] = Field(default_factory=set)
     completed_player_objective_ids: set[str] = Field(default_factory=set)
+    failed_player_objective_ids: set[str] = Field(default_factory=set)
     simulation: SimulationState = Field(default_factory=SimulationState)
     scheduled_location_conditions: list[ScheduledLocationCondition] = Field(default_factory=list)
     scheduled_location_condition_expirations: list[ScheduledLocationConditionExpiry] = Field(
@@ -345,8 +347,19 @@ class WorldState(BaseModel):
             raise ValueError("active player objectives must reference configured objectives")
         if not self.completed_player_objective_ids <= objective_id_set:
             raise ValueError("completed player objectives must reference configured objectives")
-        if self.active_player_objective_ids & self.completed_player_objective_ids:
-            raise ValueError("player objectives cannot be both active and complete")
+        if not self.failed_player_objective_ids <= objective_id_set:
+            raise ValueError("failed player objectives must reference configured objectives")
+        lifecycle_sets = (
+            self.active_player_objective_ids,
+            self.completed_player_objective_ids,
+            self.failed_player_objective_ids,
+        )
+        if any(
+            left & right
+            for index, left in enumerate(lifecycle_sets)
+            for right in lifecycle_sets[index + 1 :]
+        ):
+            raise ValueError("player objective lifecycle states must be disjoint")
 
         for dialogue_rule in self.dialogue_relationship_rules:
             speaker = self.entities.get(dialogue_rule.speaker_id)
