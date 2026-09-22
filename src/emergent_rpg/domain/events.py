@@ -110,6 +110,8 @@ class CharacterDamaged(DomainEvent):
     type: Literal["character_damaged"] = "character_damaged"
     entity_id: str
     amount: int = Field(gt=0)
+    source_id: str | None = None
+    cause: Literal["other", "unarmed_attack"] = "other"
 
 
 class CharacterHealed(DomainEvent):
