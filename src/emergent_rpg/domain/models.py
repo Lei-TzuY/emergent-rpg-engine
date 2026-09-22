@@ -168,6 +168,23 @@ class ItemTurnInConsequenceRule(BaseModel):
         return self
 
 
+class ObjectiveOutcomeConsequenceRule(BaseModel):
+    id: str = Field(min_length=1)
+    objective_id: str = Field(min_length=1)
+    outcome: Literal["completed", "failed"]
+    source_npc_id: EntityId
+    relationship_delta: int = Field(ge=-100, le=100)
+    reward_fact_id: FactId | None = None
+    priority: int = Field(default=0, ge=-100, le=100)
+    observation: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def nonzero_relationship_delta(self) -> ObjectiveOutcomeConsequenceRule:
+        if self.relationship_delta == 0:
+            raise ValueError("objective outcome relationship delta must be non-zero")
+        return self
+
+
 class PlayerObjective(BaseModel):
     id: str = Field(min_length=1)
     title: str = Field(min_length=1)
@@ -312,6 +329,10 @@ class WorldState(BaseModel):
     active_player_objective_ids: set[str] = Field(default_factory=set)
     completed_player_objective_ids: set[str] = Field(default_factory=set)
     failed_player_objective_ids: set[str] = Field(default_factory=set)
+    objective_outcome_consequence_rules: list[ObjectiveOutcomeConsequenceRule] = Field(
+        default_factory=list
+    )
+    applied_objective_outcome_consequence_rule_ids: set[str] = Field(default_factory=set)
     simulation: SimulationState = Field(default_factory=SimulationState)
     scheduled_location_conditions: list[ScheduledLocationCondition] = Field(default_factory=list)
     scheduled_location_condition_expirations: list[ScheduledLocationConditionExpiry] = Field(
@@ -334,8 +355,6 @@ class WorldState(BaseModel):
         turn_in_rule_ids = [rule.id for rule in self.item_turn_in_consequence_rules]
         if len(turn_in_rule_ids) != len(set(turn_in_rule_ids)):
             raise ValueError("item turn-in consequence rule ids must be unique")
-        if set(dialogue_rule_ids) & set(turn_in_rule_ids):
-            raise ValueError("dialogue and item turn-in rule ids must not overlap")
         unknown_turn_in_applied = self.applied_item_turn_in_consequence_rule_ids - set(
             turn_in_rule_ids
         )
@@ -363,6 +382,43 @@ class WorldState(BaseModel):
             for right in lifecycle_sets[index + 1 :]
         ):
             raise ValueError("player objective lifecycle states must be disjoint")
+
+        outcome_rule_ids = [rule.id for rule in self.objective_outcome_consequence_rules]
+        if len(outcome_rule_ids) != len(set(outcome_rule_ids)):
+            raise ValueError("objective outcome consequence rule ids must be unique")
+        all_rule_id_sets = [
+            set(dialogue_rule_ids),
+            set(turn_in_rule_ids),
+            set(outcome_rule_ids),
+        ]
+        if any(
+            left & right
+            for index, left in enumerate(all_rule_id_sets)
+            for right in all_rule_id_sets[index + 1 :]
+        ):
+            raise ValueError("relationship consequence rule ids must not overlap")
+        unknown_outcome_applied = (
+            self.applied_objective_outcome_consequence_rule_ids - set(outcome_rule_ids)
+        )
+        if unknown_outcome_applied:
+            raise ValueError(
+                "applied objective outcome rules must reference configured rules"
+            )
+
+        for outcome_rule in self.objective_outcome_consequence_rules:
+            if outcome_rule.objective_id not in objective_id_set:
+                raise ValueError("objective outcome rule references missing objective")
+            source = self.entities.get(outcome_rule.source_npc_id)
+            if not isinstance(source, NPC):
+                raise ValueError("objective outcome rule source must reference an NPC")
+            if outcome_rule.reward_fact_id is not None:
+                reward_fact = self.facts.get(outcome_rule.reward_fact_id)
+                if reward_fact is None:
+                    raise ValueError("objective outcome reward fact must be configured")
+                if reward_fact.discoverability == "inferred":
+                    raise ValueError(
+                        "objective outcome rule cannot directly reward an inferred fact"
+                    )
 
         for dialogue_rule in self.dialogue_relationship_rules:
             speaker = self.entities.get(dialogue_rule.speaker_id)

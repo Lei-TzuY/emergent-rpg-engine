@@ -35,6 +35,7 @@ from emergent_rpg.domain.models import (
     WorldState,
 )
 from emergent_rpg.engine.dialogue import DialogueRelationshipPolicy
+from emergent_rpg.engine.objective_outcomes import ObjectiveOutcomeConsequencePolicy
 from emergent_rpg.engine.turn_in import ItemTurnInConsequencePolicy
 
 
@@ -210,8 +211,17 @@ def apply_event(state: WorldState, event: Event) -> WorldState:
         is_turn_in_rule = event.rule_id is not None and any(
             rule.id == event.rule_id for rule in new_state.item_turn_in_consequence_rules
         )
+        is_objective_outcome_rule = event.rule_id is not None and any(
+            rule.id == event.rule_id
+            for rule in new_state.objective_outcome_consequence_rules
+        )
         if is_turn_in_rule:
             rule_error = ItemTurnInConsequencePolicy.validate_relationship_event(
+                new_state,
+                event,
+            )
+        elif is_objective_outcome_rule:
+            rule_error = ObjectiveOutcomeConsequencePolicy.validate_relationship_event(
                 new_state,
                 event,
             )
@@ -227,6 +237,8 @@ def apply_event(state: WorldState, event: Event) -> WorldState:
         if event.rule_id is not None:
             if is_turn_in_rule:
                 new_state.applied_item_turn_in_consequence_rule_ids.add(event.rule_id)
+            elif is_objective_outcome_rule:
+                new_state.applied_objective_outcome_consequence_rule_ids.add(event.rule_id)
             else:
                 rule = next(
                     rule

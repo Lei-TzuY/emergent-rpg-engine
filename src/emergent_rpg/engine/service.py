@@ -6,6 +6,7 @@ from uuid import uuid4
 from emergent_rpg.domain.actions import PlayerAction
 from emergent_rpg.domain.events import (
     Event,
+    FactDiscovered,
     NPCFactShared,
     PlayerObjectiveActivated,
     PlayerObjectiveCompleted,
@@ -24,6 +25,7 @@ from emergent_rpg.engine.npc import (
     NPCPhaseResult,
     build_npc_planning_context,
 )
+from emergent_rpg.engine.objective_outcomes import ObjectiveOutcomeConsequencePolicy
 from emergent_rpg.engine.objectives import PlayerObjectivePolicy
 from emergent_rpg.engine.reducer import apply_event, replay
 from emergent_rpg.engine.resolver import ActionResult, DeterministicResolver
@@ -123,30 +125,90 @@ class GameEngine:
                 }
             )
 
-        objective_events = PlayerObjectivePolicy.progression_events(
-            candidate,
-            candidate.turn_number,
+        observations = list(result.observations)
+        tags = set(result.tags)
+        convergence_limit = max(
+            1,
+            len(candidate.player_objectives) * 2
+            + len(candidate.objective_outcome_consequence_rules)
+            + 1,
         )
-        if objective_events:
-            observations = list(result.observations)
+        for _ in range(convergence_limit):
+            objective_events = PlayerObjectivePolicy.progression_events(
+                candidate,
+                candidate.turn_number,
+            )
+            if not objective_events:
+                break
+
+            tags.add("objective")
             for event in objective_events:
                 candidate = self._apply_validated_event(candidate, event)
                 player_events.append(event)
-                objective = PlayerObjectivePolicy.objective_by_id(candidate, event.objective_id)
+                objective = PlayerObjectivePolicy.objective_by_id(
+                    candidate,
+                    event.objective_id,
+                )
                 title = objective.title if objective is not None else event.objective_id
                 if isinstance(event, PlayerObjectiveActivated):
                     observations.append(f"Objective started: {title}")
-                elif isinstance(event, PlayerObjectiveCompleted):
+                    continue
+                if isinstance(event, PlayerObjectiveCompleted):
                     observations.append(f"Objective completed: {title}")
                 elif isinstance(event, PlayerObjectiveFailed):
                     observations.append(f"Objective failed: {title}")
-            result = result.model_copy(
-                update={
-                    "emitted_events": player_events,
-                    "observations": observations,
-                    "tags": result.tags | {"objective"},
-                }
-            )
+
+                rule, consequence_events = (
+                    ObjectiveOutcomeConsequencePolicy.consequence_events(
+                        candidate,
+                        event,
+                        candidate.turn_number,
+                    )
+                )
+                if consequence_events:
+                    tags.add("objective_consequence")
+                for consequence_event in consequence_events:
+                    candidate = self._apply_validated_event(
+                        candidate,
+                        consequence_event,
+                    )
+                    player_events.append(consequence_event)
+                    if isinstance(consequence_event, FactDiscovered):
+                        observations.append(
+                            candidate.facts[consequence_event.fact_id].proposition
+                        )
+                if rule is not None and rule.observation:
+                    observations.append(rule.observation)
+
+                inferred_after_consequence = self.mystery.infer_events(
+                    candidate,
+                    candidate.player_id,
+                    candidate.turn_number,
+                )
+                if inferred_after_consequence:
+                    tags.add("inference")
+                for inferred_event in inferred_after_consequence:
+                    candidate = self._apply_validated_event(
+                        candidate,
+                        inferred_event,
+                    )
+                    player_events.append(inferred_event)
+                    observations.append(
+                        f"Inference: {candidate.facts[inferred_event.fact_id].proposition}"
+                    )
+        else:
+            raise TransitionRejected("player objective consequences did not converge")
+
+        if PlayerObjectivePolicy.progression_events(candidate, candidate.turn_number):
+            raise TransitionRejected("player objective progression did not converge")
+
+        result = result.model_copy(
+            update={
+                "emitted_events": player_events,
+                "observations": observations,
+                "tags": tags,
+            }
+        )
 
         state_report = validate_state(
             candidate,
