@@ -39,7 +39,8 @@ The project advances by coherent executable slices rather than placeholder subsy
 35. **Deterministic player combat / damage provenance** — add a typed player attack action and provenance-rich validated damage authority across parser/resolver/reducer/API/browser paths without allowing prose to decide damage. **Complete.**
 36. **Replayable combat stamina economy / rest recovery** — make canonical stamina an executable resource with typed spend/recovery provenance, attack affordability, player-visible resource projection, and deterministic rest recovery. **Complete.**
 37. **Actor-symmetric bounded NPC retaliation** — let a surviving local NPC perform at most one deterministic retaliatory unarmed strike through shared stamina/damage provenance rather than a separate combat mutation path. **Complete.**
-38. **Data-driven weapon profiles / equipment authority** — add canonical weapon stats and a typed equip path so attacks can derive bounded damage/stamina cost from owned equipment instead of hard-coded fists. **Next.**
+38. **Data-driven weapon profiles / equipment authority** — add canonical weapon stats and a typed equip path so attacks can derive bounded damage/stamina cost from owned equipment instead of hard-coded fists. **Complete.**
+39. **Canonical player defeat / actionability authority** — make dead, unconscious, and incapacitated player states consistently gate material actions so lethal combat cannot leave a logically dead actor moving, taking, talking, equipping, or otherwise mutating world state. **Next.**
 
 ## Milestone 3 invariant
 
@@ -865,3 +866,59 @@ canonical Item.weapon profile
 ```
 
 A weapon profile should be explicit structured world-pack data with bounded damage/stamina values. Equipping must require canonical ownership and typed event provenance; direct equipped-state mutation must fail closed. Damage provenance must identify the weapon used so reducer/transition validation can re-derive the exact legal numbers. Unarmed attack remains the fallback when no weapon is equipped. This phase should not add armor, hit chance, random rolls, durability, arbitrary loot generation, or generic combat AI.
+
+
+## Milestone 38 invariant
+
+Weapon combat now derives executable authority from canonical inventory/equipment data rather than hard-coded weapon names or prose:
+
+```text
+canonical Item.weapon profile
++ canonical ownership / inventory custody
+→ EquipAction
+→ WeaponEquipmentChanged(from_item_id, to_item_id)
+→ equipment precondition + reducer validation
+→ canonical CharacterState.equipped_weapon_id
+→ AttackAction
+→ CombatPolicy.attack_profile()
+→ CharacterStaminaSpent(
+     amount = profile.stamina_cost,
+     weapon_id = equipped weapon id
+   )
+→ CharacterDamaged(
+     amount = profile.damage,
+     cause = weapon_attack,
+     weapon_id = same weapon id,
+     stamina_spend_event_id = exact spend id
+   )
+→ optional bounded NPC retaliation under the defender's own profile
+→ whole-transition equipment + spend/damage provenance validation
+→ atomic persistence / replay
+```
+
+Weapon profiles are explicit structured world data with bounded damage and stamina values. A weapon can be equipped only when the actor is alive, conscious, non-incapacitated, canonically owns the item, has it in inventory, and the item has a weapon profile. The event's `from_item_id` must match canonical equipped state; direct equipped-state mutation without a typed equipment event fails whole-transition validation.
+
+Attack authority re-derives the current profile from canonical state. Weapon spend and damage events carry the exact weapon id, damage, stamina cost, source/target, and spend-event provenance. Whole-transition validation accepts both unarmed and weapon attack damage, requires an exact prior matching stamina spend, and rejects weapon-id mismatches. Removing equipment returns the actor to the existing deterministic unarmed profile.
+
+Custody remains coherent with equipment: an equipped weapon cannot be dropped or transferred until unequipped. The Ashfall demo now contains an executable `relay wrench` weapon with damage 4 / stamina cost 4 so the full take → equip → attack → retaliation → replay path is exercised through ordinary player commands. Equipped weapon state is projected through API, CLI, browser UI, and structured action parsing.
+
+Focused coverage proves deterministic equip/unequip parsing, take→equip→weapon attack→retaliation→replay, exact weapon damage/stamina derivation, unarmed fallback after unequip, forged equipment rejection, direct equipment mutation rejection, forged weapon provenance rejection, equipped-weapon custody protection, and provider-failure zero-commit semantics.
+
+The fully green implementation head `391b1cf2294ebe975b3f9d2d4e3ae8b271f5265c` passed wheel/browser packaging, Ruff, strict mypy across 62 source files, **306 pytest tests**, the seeded 1,000-accepted-turn consistency evaluation (**1,058 submitted / 1,000 accepted / failures=[] / passed=true**) and verifier, plus the autonomy/custody/social integration evaluation and verifier with `failures=[] / passed=true`.
+
+## Promotion gate for Milestone 39
+
+Milestones 35–38 now make combat damage, stamina, retaliation, weapons, and equipment canonical and replayable. That exposes a more urgent cross-layer correctness gap than armor or hit chance: a lethal combat transition can set the player to `alive=false` / `conscious=false`, but player action legality is not yet governed by one global actionability authority. Some non-combat actions can therefore remain independently legal even after defeat.
+
+Milestone 39 should introduce one centralized player actionability / defeat gate:
+
+```text
+canonical player life + consciousness + incapacitating status
+→ shared actionability policy
+→ PlayerAction category check
+→ resolver + event-precondition backstop
+→ rejected material action emits no material events
+→ persisted defeated state remains replay-stable
+```
+
+At minimum, dead or unconscious players must be unable to perform material world mutations such as movement, item acquisition/handoff, equipment changes, attacks, dialogue-driven mutations, inspection-driven discovery, or waiting that advances simulation. Incapacitating status behavior should be defined once and reused rather than maintained as scattered per-action branches. The policy should preserve read-only state/history access and should not invent resurrection, respawn, armor, initiative, random hit chance, or a broad combat AI framework.
