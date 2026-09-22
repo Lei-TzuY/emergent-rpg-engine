@@ -265,6 +265,8 @@ def _visible_action_surface(state: WorldState) -> dict[str, object]:
     movement_blocked = any(status.incapacitating for status in player.state.status_conditions)
     return {
         "location": location.name,
+        "health": player.state.health,
+        "stamina": player.state.stamina,
         "exits": exits,
         "blocked_exits": blocked_exits,
         "visible_items": visible_items,
