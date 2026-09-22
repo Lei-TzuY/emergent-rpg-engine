@@ -4,39 +4,37 @@ This file is the compact current-phase status. Historical milestone invariants a
 
 ## Current checkpoint
 
-- Milestones 1–30: **Complete**.
-- Milestone 31 — **Replayable player objective progression**: **Complete**.
-- Milestone 32 — **Replayable player objective deadlines / failure lifecycle**: **Complete**.
-- Milestone 33 — **Data-driven objective outcome consequences**: **Next**.
+- Milestones 1–32: **Complete**.
+- Milestone 33 — **Data-driven objective outcome consequences**: **Complete**.
+- Milestone 34 — **Objective-triggered scheduled world consequences**: **Next**.
 
-## Milestone 32 authority boundary
+## Milestone 33 authority boundary
 
-Objective failure is canonical lifecycle state, not a side effect of prose or a wall-clock timer:
+Objective terminal outcomes can now affect the wider canonical world without giving the objective policy direct mutation authority:
 
 ```text
-accepted player action
-→ canonical TimeAdvanced / ordinary player events
-→ deterministic objective fixed-point
-→ activate eligible objectives
-→ complete every earned objective
-→ fail remaining due objectives
-→ typed lifecycle validation / reduction
+PlayerObjectiveCompleted / PlayerObjectiveFailed
+→ deterministic highest-priority outcome rule
+→ optional existing FactDiscovered authority
+→ existing RelationshipChanged authority
+→ canonical applied-rule provenance
+→ inference + objective reconvergence
 → narration
-→ one atomic commit / replay
+→ one atomic persistence / replay path
 ```
 
-The fixed-point gives completion precedence when completion and deadline coincide. A downstream objective that becomes activation-ready because another objective completes in the same turn receives another activation/completion pass before deadline failure can terminate it.
+Each objective + outcome can consume at most one consequence rule. Rule ids cannot overlap dialogue or item-turn-in relationship rules, so reducer validation always knows which policy owns a `RelationshipChanged(rule_id=...)` event. A forged consequence before the configured terminal outcome fails closed, and a lower-priority sibling cannot fire after the selected rule has consumed that outcome.
 
-`PlayerObjectiveFailed` is independently validated against canonical objective configuration and world time. Reducer-owned active/completed/failed sets are mutually exclusive, and transition validation reconstructs their expected state from lifecycle events so direct mutation fails closed.
+Reward facts remain subject to ordinary discovery prerequisites. Any resulting player inference is replayable, and the engine performs a bounded same-turn objective fixed-point so consequence facts can unlock downstream objectives immediately.
 
-Active objectives expose their public deadline through CLI/API/browser. Completed and failed objectives are also player-visible, while pending objective definitions and prerequisite ids remain hidden.
+Provider failure still occurs before persistence. Objective lifecycle events, outcome reward facts, relationship changes, inferred facts, applied-rule provenance, turns, and canonical state therefore remain uncommitted if narration fails.
 
-The implementation preserves provider-failure atomicity: narration failure occurs before persistence, so deadline-triggered lifecycle events, canonical state, event log, and turn history remain unchanged.
+The fully green implementation head `a063b598a893265857c45d2db97dfe7c6846ae15` passed wheel/browser packaging, Ruff, strict mypy, full pytest, the seeded 1,000-turn consistency evaluation and verifier, and the autonomy integration evaluation and verifier.
 
-## Next frontier: Milestone 33
+## Next frontier: Milestone 34
 
-Objective outcomes now have deterministic truth but do not yet provide a generic way to alter the wider world. Milestone 33 should add **data-driven objective outcome consequences**.
+Milestone 33 supports immediate fact and relationship consequences but does not yet let an objective outcome schedule future environmental change. Milestone 34 should add a typed, replayable queueing path into the existing canonical scheduled-world timeline.
 
-A canonical rule should match a validated `PlayerObjectiveCompleted` or `PlayerObjectiveFailed` outcome and emit only bounded consequences through existing typed authorities such as fact discovery, relationship change, or scheduled world events. Rules need deterministic ordering, one-shot provenance, forged-event backstops, persistence/replay equality, hidden-prerequisite safety, and provider-failure zero-commit behavior.
+The objective consequence layer should emit a dedicated validated queue event carrying exact objective/rule/schedule provenance. Reduction may append a validated `ScheduledLocationCondition` entry, but actual activation must remain owned by the existing world-event scheduler at the configured canonical due minute. Duplicate ids, missing locations, invalid route targets, past-due schedules, and forged objective provenance must fail closed.
 
-The goal is to make quest outcomes causally affect the world without creating a second mutation engine or embedding named quest branches in generic runtime code.
+This promotes quest outcomes from immediate social/knowledge effects to delayed world simulation while preserving one scheduler, one environmental authority, and one replayable event log.
