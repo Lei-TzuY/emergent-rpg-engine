@@ -36,6 +36,7 @@ from emergent_rpg.domain.models import (
     StatusCondition,
     WorldState,
 )
+from emergent_rpg.engine.combat import CombatPolicy
 from emergent_rpg.engine.dialogue import DialogueRelationshipPolicy
 from emergent_rpg.engine.objective_outcomes import ObjectiveOutcomeConsequencePolicy
 from emergent_rpg.engine.objective_schedules import ObjectiveOutcomeSchedulePolicy
@@ -187,6 +188,9 @@ def apply_event(state: WorldState, event: Event) -> WorldState:
         item.owner_id = None
         item.location_id = event.to_location
     elif isinstance(event, CharacterDamaged):
+        damage_error = CombatPolicy.validate_damage_event(new_state, event)
+        if damage_error is not None:
+            raise ReductionError(damage_error)
         char = new_state.entities[event.entity_id].state
         char.health = max(0, char.health - event.amount)
         if char.health == 0:
