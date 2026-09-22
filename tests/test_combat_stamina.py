@@ -38,6 +38,7 @@ def _apply_all(state: WorldState, events: list[object]) -> WorldState:
 
 def test_attack_emits_spend_damage_and_combat_time_as_one_valid_transition() -> None:
     before = build_demo_world()
+    _lio(before).state.stamina = 0
     result = DeterministicResolver().resolve(
         before,
         AttackAction(target="Lio Marr"),
