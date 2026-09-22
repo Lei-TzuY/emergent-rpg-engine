@@ -55,6 +55,17 @@ def _create_session(store: SQLiteStore, state: WorldState) -> GameSession:
     return session
 
 
+def test_world_rejects_cyclic_objective_dependencies() -> None:
+    state = build_demo_world()
+    state.player_objectives = [
+        _objective("objective_a", activation_objectives={"objective_b"}),
+        _objective("objective_b", activation_objectives={"objective_a"}),
+    ]
+
+    with pytest.raises(ValueError, match="player objective dependencies must be acyclic"):
+        WorldState.model_validate(state.model_dump())
+
+
 def test_objective_policy_deterministically_cascades_dependencies() -> None:
     state = build_demo_world()
     state.player_objectives = [
