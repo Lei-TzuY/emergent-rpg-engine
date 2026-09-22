@@ -17,6 +17,7 @@ from emergent_rpg.domain.models import (
     ScheduledLocationCondition,
     TraversalEffect,
     TruthStatus,
+    WeaponProfile,
     WorldState,
 )
 
@@ -328,6 +329,15 @@ def build_demo_world() -> WorldState:
             description="A copper winding fragment thrown clear of the ridge junction.",
             location_id="ridge",
             flags={"portable", "evidence"},
+        ),
+        "item_relay_wrench": Item(
+            id="item_relay_wrench",
+            name="relay wrench",
+            item_type="weapon",
+            description="A heavy relay-service wrench balanced well enough to swing.",
+            location_id="yard",
+            flags={"portable"},
+            weapon=WeaponProfile(damage=4, stamina_cost=4),
         ),
         "item_flask": Item(
             id="item_flask",
