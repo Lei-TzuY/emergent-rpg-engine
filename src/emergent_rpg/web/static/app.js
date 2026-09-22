@@ -16,6 +16,7 @@ const ui = {
   facts: document.querySelector("#known-facts"),
   activeObjectives: document.querySelector("#active-objectives"),
   completedObjectives: document.querySelector("#completed-objectives"),
+  failedObjectives: document.querySelector("#failed-objectives"),
   turnCounter: document.querySelector("#turn-counter"),
   history: document.querySelector("#history-log"),
   actionForm: document.querySelector("#action-form"),
@@ -118,7 +119,8 @@ function renderObjectives(container, objectives) {
   }
   objectives.forEach((objective) => {
     const item = document.createElement("li");
-    item.textContent = `${objective.title}: ${objective.description}`;
+    const deadline = objective.deadline ? ` · due ${objective.deadline}` : "";
+    item.textContent = `${objective.title}: ${objective.description}${deadline}`;
     container.append(item);
   });
 }
@@ -142,6 +144,7 @@ function renderState(view) {
   renderChips(ui.inventory, view.inventory.map((item) => item.name), "empty");
   renderObjectives(ui.activeObjectives, view.active_objectives || []);
   renderObjectives(ui.completedObjectives, view.completed_objectives || []);
+  renderObjectives(ui.failedObjectives, view.failed_objectives || []);
 
   ui.facts.replaceChildren();
   if (!view.known_facts.length) {
