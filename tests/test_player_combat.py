@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from emergent_rpg.api.app import create_app
 from emergent_rpg.domain.actions import AttackAction
 from emergent_rpg.domain.events import CharacterDamaged, TimeAdvanced, parse_event
-from emergent_rpg.domain.models import NPC
+from emergent_rpg.domain.models import NPC, StatusCondition, WorldState
 from emergent_rpg.engine.combat import CombatPolicy
 from emergent_rpg.engine.narrative import ScenePlan
 from emergent_rpg.engine.reducer import ReductionError, apply_event
@@ -50,9 +50,8 @@ class FailingNarrativeGenerator(NarrativeGenerator):
         raise ProviderRequestError("simulated combat narration outage")
 
 
-def _lio(state: object) -> NPC:
-    assert hasattr(state, "entities")
-    entity = state.entities["npc_lio"]  # type: ignore[attr-defined]
+def _lio(state: WorldState) -> NPC:
+    entity = state.entities["npc_lio"]
     assert isinstance(entity, NPC)
     return entity
 
@@ -129,7 +128,7 @@ def test_attack_rejects_remote_inactive_and_incapacitated_targets() -> None:
 
     lio.state.conscious = True
     state.player().state.status_conditions.append(
-        state.player().state.status_conditions.__class__.__args__[0](  # type: ignore[attr-defined]
+        StatusCondition(
             code="stunned",
             name="Stunned",
             incapacitating=True,
