@@ -123,6 +123,8 @@ def test_resolver_emits_provenance_rich_fixed_unarmed_damage() -> None:
     assert damage.source_id == state.player_id
     assert damage.cause == "unarmed_attack"
     assert damage.amount == CombatPolicy.UNARMED_DAMAGE
+    assert damage.stamina_spend_event_id == spend.event_id
+    assert damage.stamina_cost == CombatPolicy.UNARMED_STAMINA_COST
     assert advance.minutes == CombatPolicy.UNARMED_MINUTES
     assert advance.cause == "combat"
     assert result.involved_entities == {"player", "npc_lio"}
