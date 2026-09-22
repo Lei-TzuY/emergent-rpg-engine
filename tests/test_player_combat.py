@@ -8,7 +8,12 @@ from fastapi.testclient import TestClient
 
 from emergent_rpg.api.app import create_app
 from emergent_rpg.domain.actions import AttackAction
-from emergent_rpg.domain.events import CharacterDamaged, TimeAdvanced, parse_event
+from emergent_rpg.domain.events import (
+    CharacterDamaged,
+    CharacterStaminaSpent,
+    TimeAdvanced,
+    parse_event,
+)
 from emergent_rpg.domain.models import NPC, StatusCondition, WorldState
 from emergent_rpg.engine.combat import CombatPolicy
 from emergent_rpg.engine.narrative import DeterministicNarrativePlanner, ScenePlan
@@ -82,6 +87,8 @@ def test_structured_provider_can_propose_attack_from_visible_surface() -> None:
     assert transport.payload is not None
     wire = str(transport.payload)
     assert "Lio Marr" in wire
+    assert '"stamina": 10' in wire
+    assert '"health": 10' in wire
     assert "planning_goals" not in wire
     assert "knowledge" not in wire
 
@@ -95,6 +102,11 @@ def test_resolver_emits_provenance_rich_fixed_unarmed_damage() -> None:
     )
 
     assert result.accepted
+    spend = next(
+        event
+        for event in result.emitted_events
+        if isinstance(event, CharacterStaminaSpent)
+    )
     damage = next(
         event
         for event in result.emitted_events
@@ -103,11 +115,16 @@ def test_resolver_emits_provenance_rich_fixed_unarmed_damage() -> None:
     advance = next(
         event for event in result.emitted_events if isinstance(event, TimeAdvanced)
     )
+    assert spend.entity_id == state.player_id
+    assert spend.target_id == "npc_lio"
+    assert spend.amount == CombatPolicy.UNARMED_STAMINA_COST
+    assert spend.reason == "unarmed_attack"
     assert damage.entity_id == "npc_lio"
     assert damage.source_id == state.player_id
     assert damage.cause == "unarmed_attack"
     assert damage.amount == CombatPolicy.UNARMED_DAMAGE
     assert advance.minutes == CombatPolicy.UNARMED_MINUTES
+    assert advance.cause == "combat"
     assert result.involved_entities == {"player", "npc_lio"}
     assert {"combat", "attack"} <= result.tags
 
@@ -263,7 +280,15 @@ def test_engine_attack_persists_replays_and_eventually_kills_target(tmp_path: Pa
     engine = GameEngine(store)
     session = engine.new_session()
 
+    state = store.load_state(session.id)
     for _ in range(5):
+        if state.player().state.stamina < CombatPolicy.UNARMED_STAMINA_COST:
+            missing = (
+                CombatPolicy.UNARMED_STAMINA_COST
+                - state.player().state.stamina
+            )
+            waited, _, state = engine.process_text(session.id, f"wait {missing}")
+            assert waited.accepted
         result, _, state = engine.process_text(session.id, "attack Lio Marr")
         assert result.accepted
 
@@ -295,6 +320,11 @@ def test_browser_api_raw_text_attack_uses_same_combat_authority(tmp_path: Path) 
     store = SQLiteStore(db_path)
     state = store.load_state(session_id)
     assert _lio(state).state.health == 10 - CombatPolicy.UNARMED_DAMAGE
+    assert state.player().state.stamina == (
+        CombatPolicy.MAX_STAMINA - CombatPolicy.UNARMED_STAMINA_COST
+    )
+    assert response.json()["state"]["health"] == 10
+    assert response.json()["state"]["stamina"] == state.player().state.stamina
     persisted = store.load_events(session_id)
     damage = next(event for event in persisted if isinstance(event, CharacterDamaged))
     assert damage.source_id == state.player_id
