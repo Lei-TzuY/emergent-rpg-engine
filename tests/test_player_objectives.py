@@ -6,7 +6,11 @@ import pytest
 
 from emergent_rpg.api.models import project_player_state
 from emergent_rpg.domain.actions import TakeAction
-from emergent_rpg.domain.events import PlayerObjectiveActivated, PlayerObjectiveCompleted
+from emergent_rpg.domain.events import (
+    PlayerObjectiveActivated,
+    PlayerObjectiveCompleted,
+    PlayerObjectiveFailed,
+)
 from emergent_rpg.domain.models import GameSession, PlayerObjective, WorldState
 from emergent_rpg.engine.narrative import ScenePlan
 from emergent_rpg.engine.objectives import PlayerObjectivePolicy
@@ -32,11 +36,13 @@ def _objective(
     activation_items: set[str] | None = None,
     activation_objectives: set[str] | None = None,
     completion_facts: set[str] | None = None,
+    deadline_absolute_minute: int | None = None,
 ) -> PlayerObjective:
     return PlayerObjective(
         id=objective_id,
         title=objective_id.replace("_", " ").title(),
         description=f"Public description for {objective_id}.",
+        deadline_absolute_minute=deadline_absolute_minute,
         activation_required_fact_ids=activation_facts or set(),
         activation_required_item_ids=activation_items or set(),
         activation_required_completed_objective_ids=activation_objectives or set(),
@@ -176,6 +182,121 @@ def test_engine_persists_objective_lifecycle_and_replays_exactly(tmp_path: Path)
     assert sum(isinstance(event, PlayerObjectiveCompleted) for event in persisted) == 1
 
 
+def test_objective_deadline_failure_persists_and_replays_exactly(tmp_path: Path) -> None:
+    store = SQLiteStore(tmp_path / "objective-deadline.db")
+    state = build_demo_world()
+    deadline = state.clock.absolute_minutes + 1
+    state.player_objectives = [
+        _objective(
+            "urgent_case",
+            completion_facts={"fact_inside_job"},
+            deadline_absolute_minute=deadline,
+        )
+    ]
+    session = _create_session(store, state)
+    engine = GameEngine(store)
+
+    result, _, final_state = engine.process_text(session.id, "wait 1")
+
+    assert result.accepted
+    assert final_state.active_player_objective_ids == set()
+    assert final_state.completed_player_objective_ids == set()
+    assert final_state.failed_player_objective_ids == {"urgent_case"}
+    assert [
+        event.type
+        for event in result.emitted_events
+        if isinstance(
+            event,
+            (PlayerObjectiveActivated, PlayerObjectiveCompleted, PlayerObjectiveFailed),
+        )
+    ] == ["player_objective_activated", "player_objective_failed"]
+    assert engine.replay_session(session.id) == final_state
+    persisted = store.load_events(session.id)
+    assert sum(isinstance(event, PlayerObjectiveFailed) for event in persisted) == 1
+
+
+def test_objective_completion_wins_when_deadline_and_completion_coincide() -> None:
+    state = build_demo_world()
+    state.player_objectives = [
+        _objective(
+            "deadline_win",
+            completion_facts={"fact_key_mark"},
+            deadline_absolute_minute=state.clock.absolute_minutes,
+        )
+    ]
+    state.active_player_objective_ids = {"deadline_win"}
+    state.player_known_facts.add("fact_key_mark")
+
+    events = PlayerObjectivePolicy.progression_events(state, turn_number=1)
+
+    assert [event.type for event in events] == ["player_objective_completed"]
+
+
+def test_forged_objective_failure_requires_due_deadline_and_respects_completion() -> None:
+    state = build_demo_world()
+    deadline = state.clock.absolute_minutes + 5
+    state.player_objectives = [
+        _objective(
+            "deadline_guard",
+            completion_facts={"fact_key_mark"},
+            deadline_absolute_minute=deadline,
+        )
+    ]
+    state.active_player_objective_ids = {"deadline_guard"}
+    failure = PlayerObjectiveFailed(turn_number=1, objective_id="deadline_guard")
+
+    early = validate_event_preconditions(state, failure)
+    assert not early.valid
+    assert "deadline has not been reached" in str(early.issues)
+
+    state.clock = state.clock.advanced(5)
+    state.player_known_facts.add("fact_key_mark")
+    completion_ready = validate_event_preconditions(state, failure)
+    assert not completion_ready.valid
+    assert "completion takes precedence" in str(completion_ready.issues)
+
+
+def test_direct_failed_objective_mutation_requires_event_provenance() -> None:
+    before = build_demo_world()
+    before.player_objectives = [
+        _objective(
+            "tracked_failure",
+            deadline_absolute_minute=before.clock.absolute_minutes,
+        )
+    ]
+    after = before.model_copy(deep=True)
+    after.failed_player_objective_ids.add("tracked_failure")
+
+    report = validate_state(after, previous=before, transition_events=[])
+
+    assert not report.valid
+    assert "player objective state does not match lifecycle event provenance" in str(
+        report.issues
+    )
+
+
+def test_provider_failure_does_not_commit_objective_deadline_failure(tmp_path: Path) -> None:
+    store = SQLiteStore(tmp_path / "objective-deadline-provider.db")
+    state = build_demo_world()
+    state.player_objectives = [
+        _objective(
+            "deadline_atomic",
+            completion_facts={"fact_inside_job"},
+            deadline_absolute_minute=state.clock.absolute_minutes + 1,
+        )
+    ]
+    session = _create_session(store, state)
+    before = store.load_state(session.id)
+    engine = GameEngine(store, generator=FailingNarrativeGenerator())
+
+    with pytest.raises(ProviderRequestError, match="simulated outage"):
+        engine.process_text(session.id, "wait 1")
+
+    assert store.load_state(session.id) == before
+    assert store.load_events(session.id) == []
+    assert store.list_turns(session.id) == []
+
+
 def test_provider_failure_does_not_commit_objective_progression(tmp_path: Path) -> None:
     store = SQLiteStore(tmp_path / "objective-provider.db")
     state = build_demo_world()
@@ -212,15 +333,22 @@ def test_player_projection_hides_pending_objectives_and_prerequisites() -> None:
         ),
         _objective("visible_active"),
         _objective("visible_done"),
+        _objective(
+            "visible_failed",
+            deadline_absolute_minute=state.clock.absolute_minutes + 30,
+        ),
     ]
     state.active_player_objective_ids = {"visible_active"}
     state.completed_player_objective_ids = {"visible_done"}
+    state.failed_player_objective_ids = {"visible_failed"}
 
     view = project_player_state(state)
     wire = view.model_dump_json()
 
     assert [item.id for item in view.active_objectives] == ["visible_active"]
     assert [item.id for item in view.completed_objectives] == ["visible_done"]
+    assert [item.id for item in view.failed_objectives] == ["visible_failed"]
+    assert view.failed_objectives[0].deadline == "Day 1, 08:30"
     assert "pending_secret" not in wire
     assert "fact_blackout_window" not in wire
     assert "fact_relay_sabotage" not in wire
@@ -236,3 +364,4 @@ def test_demo_objectives_are_pending_until_player_earns_prerequisites() -> None:
     }
     assert view.active_objectives == []
     assert view.completed_objectives == []
+    assert view.failed_objectives == []
