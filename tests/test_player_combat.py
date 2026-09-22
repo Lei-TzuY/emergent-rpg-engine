@@ -11,7 +11,7 @@ from emergent_rpg.domain.actions import AttackAction
 from emergent_rpg.domain.events import CharacterDamaged, TimeAdvanced, parse_event
 from emergent_rpg.domain.models import NPC, StatusCondition, WorldState
 from emergent_rpg.engine.combat import CombatPolicy
-from emergent_rpg.engine.narrative import ScenePlan
+from emergent_rpg.engine.narrative import DeterministicNarrativePlanner, ScenePlan
 from emergent_rpg.engine.reducer import ReductionError, apply_event
 from emergent_rpg.engine.resolver import DeterministicResolver
 from emergent_rpg.engine.service import GameEngine
@@ -234,6 +234,28 @@ def test_legacy_damage_event_shape_remains_replayable() -> None:
     damaged = apply_event(state, event)
 
     assert _lio(damaged).state.health == 9
+
+
+def test_scene_validation_only_allows_participants_newly_inactivated_this_turn() -> None:
+    planner = DeterministicNarrativePlanner()
+    before = build_demo_world()
+    after = before.model_copy(deep=True)
+    lio = _lio(after)
+    lio.state.health = 0
+    lio.state.alive = False
+    lio.state.conscious = False
+    plan = ScenePlan(
+        objective="combat transition",
+        participating_entities=["player", "npc_lio"],
+    )
+
+    newly_inactive = planner.validate(before, after, plan)
+    assert newly_inactive.valid
+
+    already_inactive_before = after.model_copy(deep=True)
+    stale = planner.validate(already_inactive_before, after, plan)
+    assert not stale.valid
+    assert "inactive_participant" in {issue.code for issue in stale.issues}
 
 
 def test_engine_attack_persists_replays_and_eventually_kills_target(tmp_path: Path) -> None:
